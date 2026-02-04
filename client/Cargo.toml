@@ -1,0 +1,10 @@
+[package]
+name = "client"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bevy = "0.14"
+crossbeam-channel = "0.5"
+reqwest = { version = "0.12", features = ["blocking", "json"] }
+shared = { path = "../shared" }
