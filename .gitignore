@@ -1,0 +1,17 @@
+/target
+**/target
+*.exe
+*.dll
+*.so
+*.dylib
+*.pdb
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.log
+.env
+.env.*
+legacy/**/node_modules/
+legacy/**/dist/
+legacy/**/build/
