@@ -5,11 +5,16 @@ use crate::core::{
     SessionState,
 };
 use crate::gameplay::exorcism::{InvestigationState, PuzzleSpawned};
+use crate::gameplay::ghost::GhostState;
+use crate::gameplay::investigator::Player;
+use crate::gameplay::map::{HouseLayout, HouseLayoutKind, HouseLayoutSelection};
+use crate::gameplay::map::components::CollisionWorld;
+use crate::gameplay::map::systems::{investigator_spawn_position, random_ghost_spawn_position};
 use crate::gameplay::investigator::tools::EvidenceState;
 use crate::ui::{
     BeginHauntButton, BeginInvestigationButton, ExitButton, GhostDetailRoot, GhostSelectButton,
     InvestigatorDetailRoot, InvestigatorSelectButton, OnryoGhostButton, RoleSelectRoot,
-    SpiritGhostButton, StartScreenButton, StartScreenRoot,
+    SpiritGhostButton, StartScreenButton, StartScreenRoot, ThreeRoomCountButton, TwoRoomCountButton,
     BansheeGhostButton,
 };
 
@@ -311,6 +316,71 @@ pub fn setup_menu(mut commands: Commands) {
                     ));
                 });
 
+            parent.spawn(TextBundle::from_section(
+                "Room Count",
+                TextStyle {
+                    font_size: 16.0,
+                    color: Color::srgb(0.8, 0.86, 1.0),
+                    ..default()
+                },
+            ));
+
+            parent
+                .spawn(NodeBundle {
+                    style: Style {
+                        flex_direction: FlexDirection::Row,
+                        column_gap: Val::Px(12.0),
+                        ..default()
+                    },
+                    background_color: BackgroundColor(Color::NONE),
+                    ..default()
+                })
+                .with_children(|row| {
+                    row.spawn((
+                        ButtonBundle {
+                            style: Style {
+                                padding: UiRect::axes(Val::Px(16.0), Val::Px(10.0)),
+                                ..default()
+                            },
+                            background_color: button_color,
+                            ..default()
+                        },
+                        TwoRoomCountButton,
+                    ))
+                    .with_children(|button| {
+                        button.spawn(TextBundle::from_section(
+                            "2 Rooms",
+                            TextStyle {
+                                font_size: 14.0,
+                                color: Color::WHITE,
+                                ..default()
+                            },
+                        ));
+                    });
+
+                    row.spawn((
+                        ButtonBundle {
+                            style: Style {
+                                padding: UiRect::axes(Val::Px(16.0), Val::Px(10.0)),
+                                ..default()
+                            },
+                            background_color: button_color,
+                            ..default()
+                        },
+                        ThreeRoomCountButton,
+                    ))
+                    .with_children(|button| {
+                        button.spawn(TextBundle::from_section(
+                            "3 Rooms",
+                            TextStyle {
+                                font_size: 14.0,
+                                color: Color::WHITE,
+                                ..default()
+                            },
+                        ));
+                    });
+                });
+
             parent
                 .spawn((
                     ButtonBundle {
@@ -435,6 +505,8 @@ pub fn handle_menu_interactions(
             Option<&SpiritGhostButton>,
             Option<&BansheeGhostButton>,
             Option<&OnryoGhostButton>,
+            Option<&TwoRoomCountButton>,
+            Option<&ThreeRoomCountButton>,
             Option<&BeginHauntButton>,
             Option<&BeginInvestigationButton>,
             Option<&ExitButton>,
@@ -452,8 +524,17 @@ pub fn handle_menu_interactions(
     mut session: ResMut<SessionState>,
     mut control: ResMut<crate::core::CameraControl>,
     mut journal: ResMut<JournalState>,
+    mut ghost: Option<ResMut<GhostState>>,
+    layout_resources: (
+        Option<ResMut<HouseLayout>>,
+        Option<ResMut<CollisionWorld>>,
+        Option<ResMut<HouseLayoutSelection>>,
+    ),
+    mut players: Query<&mut Transform, With<Player>>,
     mut exit_events: EventWriter<AppExit>,
 ) {
+    let (mut active_house_layout, mut collision_world, mut house_selection) = layout_resources;
+
     for (
         interaction,
         mut color,
@@ -463,6 +544,8 @@ pub fn handle_menu_interactions(
         spirit_btn,
         banshee_btn,
         onryo_btn,
+        two_room_btn,
+        three_room_btn,
         begin_haunt_btn,
         begin_investigation_btn,
         exit_btn,
@@ -489,10 +572,33 @@ pub fn handle_menu_interactions(
             if onryo_btn.is_some() {
                 ghost_type.selected = GhostType::Onryo;
             }
+            if flow.screen == MenuScreen::GhostDetails {
+                if two_room_btn.is_some() {
+                    if let Some(ref mut selection) = house_selection {
+                        selection.selected_kind = HouseLayoutKind::TwoRoom;
+                    }
+                }
+                if three_room_btn.is_some() {
+                    if let Some(ref mut selection) = house_selection {
+                        selection.selected_kind = HouseLayoutKind::ThreeRoom;
+                    }
+                }
+            }
 
             let begin_haunt = begin_haunt_btn.is_some();
             let begin_investigation = begin_investigation_btn.is_some();
             if begin_haunt || begin_investigation {
+                if let Some(ref mut selection) = house_selection {
+                    selection.active_kind = selection.selected_kind;
+                    let new_layout = HouseLayout::for_kind(selection.active_kind);
+                    if let Some(ref mut collision) = collision_world {
+                        **collision = new_layout.collision_world();
+                    }
+                    if let Some(ref mut layout) = active_house_layout {
+                        **layout = new_layout;
+                    }
+                }
+
                 if begin_haunt {
                     role.current = Role::Ghost;
                     menu.selected_role = Role::Ghost;
@@ -507,6 +613,21 @@ pub fn handle_menu_interactions(
                 investigation.confirmed = false;
                 session.started = true;
                 set_default_camera(role.current, &mut control, &mut role_yaw);
+                let investigator_spawn = active_house_layout
+                    .as_ref()
+                    .map(|layout| layout.investigator_spawn)
+                    .unwrap_or_else(investigator_spawn_position);
+                let ghost_spawn = active_house_layout
+                    .as_ref()
+                    .map(|layout| layout.random_ghost_spawn())
+                    .unwrap_or_else(random_ghost_spawn_position);
+                if let Ok(mut player_transform) = players.get_single_mut() {
+                    player_transform.translation = investigator_spawn;
+                    player_transform.rotation = Quat::IDENTITY;
+                }
+                if let Some(ref mut ghost_state) = ghost {
+                    ghost_state.position = ghost_spawn;
+                }
                 menu.open = false;
                 journal.open = false;
                 flow.screen = MenuScreen::RoleSelect;
@@ -577,6 +698,7 @@ pub fn sync_menu_styles(
     menu: Res<MenuState>,
     flow: Res<MenuFlowState>,
     ghost_type: Res<GhostTypeState>,
+    house_selection: Option<Res<HouseLayoutSelection>>,
     mut buttons: Query<(
         &mut BackgroundColor,
         Option<&GhostSelectButton>,
@@ -584,13 +706,28 @@ pub fn sync_menu_styles(
         Option<&SpiritGhostButton>,
         Option<&BansheeGhostButton>,
         Option<&OnryoGhostButton>,
+        Option<&TwoRoomCountButton>,
+        Option<&ThreeRoomCountButton>,
     )>,
 ) {
     let selected_color = BackgroundColor(Color::srgba(0.2, 0.45, 0.95, 0.95));
     let idle_color = BackgroundColor(Color::srgba(0.2, 0.25, 0.4, 0.9));
 
-    for (mut color, ghost_btn, investigator_btn, spirit_btn, banshee_btn, onryo_btn) in
-        buttons.iter_mut()
+    let selected_rooms = house_selection
+        .as_ref()
+        .map(|selection| selection.selected_kind)
+        .unwrap_or(HouseLayoutKind::TwoRoom);
+
+    for (
+        mut color,
+        ghost_btn,
+        investigator_btn,
+        spirit_btn,
+        banshee_btn,
+        onryo_btn,
+        two_room_btn,
+        three_room_btn,
+    ) in buttons.iter_mut()
     {
         if ghost_btn.is_some() {
             if flow.screen == MenuScreen::RoleSelect {
@@ -624,6 +761,18 @@ pub fn sync_menu_styles(
             };
         } else if onryo_btn.is_some() {
             *color = if ghost_type.selected == GhostType::Onryo {
+                selected_color
+            } else {
+                idle_color
+            };
+        } else if two_room_btn.is_some() {
+            *color = if selected_rooms == HouseLayoutKind::TwoRoom {
+                selected_color
+            } else {
+                idle_color
+            };
+        } else if three_room_btn.is_some() {
+            *color = if selected_rooms == HouseLayoutKind::ThreeRoom {
                 selected_color
             } else {
                 idle_color

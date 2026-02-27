@@ -3,12 +3,41 @@ use crate::prelude::*;
 use crate::gameplay::ghost::GhostMarker;
 use crate::gameplay::investigator::Player;
 
-use super::components::{Bounds, Obstacle};
+use super::components::{Bounds, HouseLayout, Obstacle};
+
+#[derive(Component)]
+pub struct LayoutWall;
+
+pub fn default_house_layout() -> HouseLayout {
+    HouseLayout::two_room()
+}
+
+pub fn room_id_in_house(layout: &HouseLayout, position: Vec3) -> Option<u8> {
+    layout
+        .rooms
+        .iter()
+        .find(|room| room.bounds.contains_xz(position))
+        .map(|room| room.id)
+}
+
+pub fn investigator_spawn_position() -> Vec3 {
+    default_house_layout().investigator_spawn
+}
+
+#[allow(dead_code)]
+pub fn ghost_spawn_positions() -> Vec<Vec3> {
+    default_house_layout().ghost_spawns
+}
+
+pub fn random_ghost_spawn_position() -> Vec3 {
+    default_house_layout().random_ghost_spawn()
+}
 
 pub fn setup_scene(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    house: Res<HouseLayout>,
 ) {
     let floor_mesh = meshes.add(Cuboid::new(20.0, 0.2, 20.0));
     let floor_material = materials.add(Color::srgb(0.06, 0.1, 0.16));
@@ -19,34 +48,7 @@ pub fn setup_scene(
         ..default()
     });
 
-    let wall_material_a = materials.add(Color::srgb(0.08, 0.1, 0.15));
-    let wall_material_b = materials.add(Color::srgb(0.06, 0.08, 0.13));
-    let wall_mesh_x = meshes.add(Cuboid::new(20.0, 4.0, 0.4));
-    let wall_mesh_z = meshes.add(Cuboid::new(0.4, 4.0, 20.0));
-    commands.spawn(PbrBundle {
-        mesh: wall_mesh_x.clone(),
-        material: wall_material_a.clone(),
-        transform: Transform::from_xyz(0.0, 2.0, -10.0),
-        ..default()
-    });
-    commands.spawn(PbrBundle {
-        mesh: wall_mesh_x,
-        material: wall_material_b.clone(),
-        transform: Transform::from_xyz(0.0, 2.0, 10.0),
-        ..default()
-    });
-    commands.spawn(PbrBundle {
-        mesh: wall_mesh_z.clone(),
-        material: wall_material_b,
-        transform: Transform::from_xyz(-10.0, 2.0, 0.0),
-        ..default()
-    });
-    commands.spawn(PbrBundle {
-        mesh: wall_mesh_z,
-        material: wall_material_a,
-        transform: Transform::from_xyz(10.0, 2.0, 0.0),
-        ..default()
-    });
+    spawn_layout_walls(&mut commands, &mut meshes, &mut materials, &house);
 
     let prop_mesh_a = meshes.add(Cuboid::new(2.2, 1.2, 1.0));
     let prop_mesh_b = meshes.add(Cuboid::new(1.4, 0.8, 1.4));
@@ -77,7 +79,7 @@ pub fn setup_scene(
         PbrBundle {
             mesh: player_mesh,
             material: player_material,
-            transform: Transform::from_xyz(0.0, 0.9, 0.0),
+            transform: Transform::from_translation(house.investigator_spawn),
             ..default()
         },
         Player,
@@ -114,6 +116,42 @@ pub fn setup_scene(
         transform: Transform::from_xyz(0.0, 1.6, 5.0).looking_at(Vec3::ZERO, Vec3::Y),
         ..default()
     });
+}
+
+fn spawn_layout_walls(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+    house: &HouseLayout,
+) {
+    for wall in &house.walls {
+        commands.spawn((
+            PbrBundle {
+                mesh: meshes.add(Cuboid::new(wall.size.x, wall.size.y, wall.size.z)),
+                material: materials.add(Color::srgb(wall.color[0], wall.color[1], wall.color[2])),
+                transform: Transform::from_translation(wall.translation),
+                ..default()
+            },
+            LayoutWall,
+        ));
+    }
+}
+
+pub fn sync_layout_walls(
+    house: Res<HouseLayout>,
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    walls: Query<Entity, With<LayoutWall>>,
+) {
+    if !house.is_changed() {
+        return;
+    }
+
+    for entity in walls.iter() {
+        commands.entity(entity).despawn_recursive();
+    }
+    spawn_layout_walls(&mut commands, &mut meshes, &mut materials, &house);
 }
 
 pub fn clamp_to_bounds(pos: &mut Vec3, bounds: Bounds, radius: f32) {
@@ -205,9 +243,11 @@ pub fn avoid_camera_obstacles(
     obstacles: &[Obstacle],
 ) -> f32 {
     let step = 0.2;
-    for _ in 0..12 {
+    while distance > 1.2 {
         let candidate = base + dir * distance;
-        if !collides(candidate, radius, obstacles) {
+        if !collides(candidate, radius, obstacles)
+            && !segment_collides(base, candidate, radius, obstacles)
+        {
             break;
         }
         distance -= step;
@@ -216,6 +256,26 @@ pub fn avoid_camera_obstacles(
         }
     }
     distance
+}
+
+fn segment_collides(start: Vec3, end: Vec3, radius: f32, obstacles: &[Obstacle]) -> bool {
+    let delta = end - start;
+    let len = delta.length();
+    if len <= f32::EPSILON {
+        return collides(start, radius, obstacles);
+    }
+
+    let dir = delta / len;
+    let step = (radius * 0.5).max(0.05);
+    let mut t = step;
+    while t < len {
+        let point = start + dir * t;
+        if collides(point, radius, obstacles) {
+            return true;
+        }
+        t += step;
+    }
+    false
 }
 
 pub fn room_id(position: Vec3) -> u8 {

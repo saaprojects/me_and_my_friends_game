@@ -7,7 +7,8 @@ use crate::gameplay::evidence::{
 };
 use crate::gameplay::ghost::GhostState;
 use crate::gameplay::investigator::Player;
-use crate::gameplay::map::systems::room_id;
+use crate::gameplay::map::HouseLayout;
+use crate::gameplay::map::systems::{room_id, room_id_in_house};
 
 #[derive(Resource)]
 pub struct EquipmentState {
@@ -55,6 +56,7 @@ pub fn update_emf_reading(
     mut equipment: ResMut<EquipmentState>,
     ghost_type: Res<GhostTypeState>,
     mut evidence: ResMut<EvidenceState>,
+    house_layout: Option<Res<HouseLayout>>,
     player: Query<&Transform, With<Player>>,
     camera: Query<&Transform, With<Camera>>,
 ) {
@@ -82,7 +84,15 @@ pub fn update_emf_reading(
         tuning.emf_facing_dot,
     );
 
-    let same_room = room_id(player_transform.translation) == room_id(ghost.position);
+    let player_room = house_layout
+        .as_ref()
+        .and_then(|layout| room_id_in_house(layout, player_transform.translation))
+        .unwrap_or_else(|| room_id(player_transform.translation));
+    let ghost_room = house_layout
+        .as_ref()
+        .and_then(|layout| room_id_in_house(layout, ghost.position))
+        .unwrap_or_else(|| room_id(ghost.position));
+    let same_room = player_room == ghost_room;
     let base_level = emf_level(ghost_type.active, distance, same_room, &tuning);
     let overlaps = distance <= overlap_distance(&tuning);
     let candidate_five =

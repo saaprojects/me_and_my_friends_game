@@ -5,12 +5,14 @@ use crate::gameplay::{
     evidence::EvidenceTuning,
     ghost::GhostState,
     investigator::tools::{EvidenceState, EquipmentState},
+    map::{HouseLayout, HouseLayoutSelection},
     GameplayPlugin,
 };
 use crate::ui::UiPlugin;
 
 pub fn run() {
     let rx = spawn_health_thread();
+    let initial_house = HouseLayout::two_room();
 
     App::new()
         .insert_resource(RoleState {
@@ -33,8 +35,9 @@ pub fn run() {
             pitch: 0.12,
         })
         .insert_resource(GhostState {
-            position: Vec3::new(0.0, 1.6, 5.0),
+            position: initial_house.random_ghost_spawn(),
         })
+        .insert_resource(HouseLayoutSelection::default())
         .insert_resource(EquipmentState {
             active: crate::core::Equipment::Emf,
             emf_level: 0,

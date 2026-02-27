@@ -543,6 +543,7 @@ pub fn sync_hud_text(
     exorcism: Res<ExorcismStatus>,
     investigation: Res<InvestigationState>,
     tables: Res<ExorcismTables>,
+    house_layout: Option<Res<crate::gameplay::map::HouseLayout>>,
     mut texts: Query<(
         &mut Text,
         Option<&ToolText>,
@@ -582,7 +583,10 @@ pub fn sync_hud_text(
     };
 
     let puzzle_label = puzzle_name(investigation.guess.unwrap_or(ghost_type.active));
-    let sequence_len = tables.banshee.sequence_len();
+    let sequence_len = house_layout
+        .as_ref()
+        .map(|layout| layout.exorcism.banshee_anchors.len() as u8)
+        .unwrap_or_else(|| tables.banshee.sequence_len());
 
     let awaiting = !investigation.confirmed || investigation.guess.is_none();
     for (

@@ -51,7 +51,7 @@ pub fn ghost_movement_system(
         0.35,
         world.bounds,
         &world.obstacles,
-        false,
+        true,
     );
 
     let forward3d = Vec3::new(

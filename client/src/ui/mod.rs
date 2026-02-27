@@ -96,6 +96,12 @@ pub struct BeginHauntButton;
 #[derive(Component)]
 pub struct BeginInvestigationButton;
 
+#[derive(Component)]
+pub struct TwoRoomCountButton;
+
+#[derive(Component)]
+pub struct ThreeRoomCountButton;
+
 pub struct UiPlugin;
 
 impl Plugin for UiPlugin {
