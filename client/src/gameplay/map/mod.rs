@@ -14,6 +14,14 @@ impl Plugin for MapPlugin {
         .insert_resource(house.collision_world())
         .insert_resource(house)
         .add_systems(Startup, systems::setup_scene)
-        .add_systems(Update, systems::sync_layout_walls);
+        .add_systems(
+            Update,
+            (
+                systems::sync_layout_walls,
+                systems::sync_room_light_visuals,
+                systems::animate_room_light_flicker,
+            )
+                .chain(),
+        );
     }
 }

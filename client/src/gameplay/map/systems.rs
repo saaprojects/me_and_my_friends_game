@@ -1,5 +1,6 @@
 use crate::prelude::*;
 
+use crate::gameplay::exorcism::RoomLights;
 use crate::gameplay::ghost::GhostMarker;
 use crate::gameplay::investigator::Player;
 
@@ -7,6 +8,23 @@ use super::components::{Bounds, HouseLayout, Obstacle};
 
 #[derive(Component)]
 pub struct LayoutWall;
+
+#[derive(Component)]
+pub struct LayoutRoof;
+
+#[derive(Component)]
+pub struct RoomLightVisual {
+    room_id: u8,
+    on_intensity: f32,
+    off_intensity: f32,
+    last_enabled: bool,
+    flicker_active: bool,
+    flicker_elapsed: f32,
+    flicker_duration: f32,
+    flicker_from: f32,
+    flicker_to: f32,
+    flicker_phase: f32,
+}
 
 pub fn default_house_layout() -> HouseLayout {
     HouseLayout::two_room()
@@ -33,11 +51,12 @@ pub fn random_ghost_spawn_position() -> Vec3 {
     default_house_layout().random_ghost_spawn()
 }
 
-pub fn setup_scene(
+pub(crate) fn setup_scene(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     house: Res<HouseLayout>,
+    room_lights: Option<Res<RoomLights>>,
 ) {
     let floor_mesh = meshes.add(Cuboid::new(20.0, 0.2, 20.0));
     let floor_material = materials.add(Color::srgb(0.06, 0.1, 0.16));
@@ -49,6 +68,12 @@ pub fn setup_scene(
     });
 
     spawn_layout_walls(&mut commands, &mut meshes, &mut materials, &house);
+    spawn_layout_roof(&mut commands, &mut meshes, &mut materials, &house);
+    spawn_room_lights(
+        &mut commands,
+        &house,
+        room_lights.as_deref(),
+    );
 
     let prop_mesh_a = meshes.add(Cuboid::new(2.2, 1.2, 1.0));
     let prop_mesh_b = meshes.add(Cuboid::new(1.4, 0.8, 1.4));
@@ -103,8 +128,8 @@ pub fn setup_scene(
 
     commands.spawn(DirectionalLightBundle {
         directional_light: DirectionalLight {
-            color: Color::srgb(0.9, 0.95, 1.0),
-            illuminance: 1000.0,
+            color: Color::srgb(0.55, 0.62, 0.8),
+            illuminance: 40.0,
             shadows_enabled: false,
             ..default()
         },
@@ -137,12 +162,95 @@ fn spawn_layout_walls(
     }
 }
 
-pub fn sync_layout_walls(
+fn spawn_layout_roof(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+    house: &HouseLayout,
+) {
+    let roof_size_x = (house.bounds.max_x - house.bounds.min_x) + 1.2;
+    let roof_size_z = (house.bounds.max_z - house.bounds.min_z) + 1.2;
+    commands.spawn((
+        PbrBundle {
+            mesh: meshes.add(Cuboid::new(roof_size_x, 0.35, roof_size_z)),
+            material: materials.add(Color::srgb(0.12, 0.14, 0.18)),
+            transform: Transform::from_xyz(0.0, 4.175, 0.0),
+            ..default()
+        },
+        LayoutRoof,
+    ));
+}
+
+fn room_light_range(bounds: Bounds) -> f32 {
+    let width = bounds.max_x - bounds.min_x;
+    let depth = bounds.max_z - bounds.min_z;
+    (width.max(depth) * 0.9 + 4.0).clamp(10.0, 16.0)
+}
+
+fn spawn_room_lights(commands: &mut Commands, house: &HouseLayout, lights: Option<&RoomLights>) {
+    const ON_INTENSITY: f32 = 250_000.0;
+    const OFF_INTENSITY: f32 = 0.0;
+
+    for room in &house.rooms {
+        let width = room.bounds.max_x - room.bounds.min_x;
+        let depth = room.bounds.max_z - room.bounds.min_z;
+        let center_x = (room.bounds.min_x + room.bounds.max_x) * 0.5;
+        let center_z = (room.bounds.min_z + room.bounds.max_z) * 0.5;
+        let enabled = lights.map(|state| state.is_enabled(room.id)).unwrap_or(true);
+        let initial_intensity = if enabled { ON_INTENSITY } else { OFF_INTENSITY };
+        let mut fixture_positions = vec![Vec3::new(center_x, 3.3, center_z)];
+        if depth > width * 1.35 {
+            let z_a = room.bounds.min_z + depth * 0.33;
+            let z_b = room.bounds.min_z + depth * 0.67;
+            fixture_positions = vec![Vec3::new(center_x, 3.3, z_a), Vec3::new(center_x, 3.3, z_b)];
+        } else if width > depth * 1.35 {
+            let x_a = room.bounds.min_x + width * 0.33;
+            let x_b = room.bounds.min_x + width * 0.67;
+            fixture_positions = vec![Vec3::new(x_a, 3.3, center_z), Vec3::new(x_b, 3.3, center_z)];
+        }
+
+        for position in fixture_positions {
+            commands.spawn((
+                PointLightBundle {
+                    point_light: PointLight {
+                        color: Color::srgb(1.0, 0.98, 0.92),
+                        intensity: initial_intensity,
+                        range: room_light_range(room.bounds),
+                        shadows_enabled: true,
+                        ..default()
+                    },
+                    transform: Transform::from_translation(position),
+                    ..default()
+                },
+                RoomLightVisual {
+                    room_id: room.id,
+                    on_intensity: ON_INTENSITY,
+                    off_intensity: OFF_INTENSITY,
+                    last_enabled: enabled,
+                    flicker_active: false,
+                    flicker_elapsed: 0.0,
+                    flicker_duration: 0.42
+                        + ((room.id as f32 * 1.37 + position.x * 0.17 + position.z * 0.11).sin()
+                            .abs()
+                            * 0.16),
+                    flicker_from: initial_intensity,
+                    flicker_to: initial_intensity,
+                    flicker_phase: room.id as f32 * 1.37 + position.x * 0.17 + position.z * 0.11,
+                },
+            ));
+        }
+    }
+}
+
+pub(crate) fn sync_layout_walls(
     house: Res<HouseLayout>,
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    room_lights: Option<Res<RoomLights>>,
     walls: Query<Entity, With<LayoutWall>>,
+    roofs: Query<Entity, With<LayoutRoof>>,
+    room_lights_visuals: Query<Entity, With<RoomLightVisual>>,
 ) {
     if !house.is_changed() {
         return;
@@ -151,7 +259,113 @@ pub fn sync_layout_walls(
     for entity in walls.iter() {
         commands.entity(entity).despawn_recursive();
     }
+    for entity in roofs.iter() {
+        commands.entity(entity).despawn_recursive();
+    }
+    for entity in room_lights_visuals.iter() {
+        commands.entity(entity).despawn_recursive();
+    }
     spawn_layout_walls(&mut commands, &mut meshes, &mut materials, &house);
+    spawn_layout_roof(&mut commands, &mut meshes, &mut materials, &house);
+    spawn_room_lights(
+        &mut commands,
+        &house,
+        room_lights.as_deref(),
+    );
+}
+
+pub(crate) fn sync_room_light_visuals(
+    lights: Option<Res<RoomLights>>,
+    mut room_lights: Query<(&mut RoomLightVisual, &mut PointLight)>,
+) {
+    let Some(lights) = lights else {
+        return;
+    };
+    if !lights.is_changed() {
+        return;
+    }
+
+    for (mut visual, mut point_light) in room_lights.iter_mut() {
+        let enabled = lights.is_enabled(visual.room_id);
+        let target = if enabled {
+            visual.on_intensity
+        } else {
+            visual.off_intensity
+        };
+        if enabled != visual.last_enabled {
+            visual.flicker_active = true;
+            visual.flicker_elapsed = 0.0;
+            visual.flicker_from = point_light.intensity;
+            visual.flicker_to = target;
+            visual.last_enabled = enabled;
+            continue;
+        }
+        point_light.intensity = target;
+        visual.flicker_from = target;
+        visual.flicker_to = target;
+    }
+}
+
+fn light_flicker_multiplier(elapsed: f32, phase: f32, turning_on: bool) -> f32 {
+    let burst = (elapsed * (43.0 + phase * 0.25)).sin() * 0.5 + 0.5;
+    let chatter = (elapsed * (76.0 + phase * 0.45)).cos() * 0.5 + 0.5;
+    let mix = burst * 0.65 + chatter * 0.35;
+    let gate = if turning_on {
+        if (elapsed * (24.0 + phase * 0.15)).sin() > -0.08 {
+            1.0
+        } else {
+            0.22
+        }
+    } else if (elapsed * (28.0 + phase * 0.2)).sin() > 0.25 {
+        0.6
+    } else {
+        0.08
+    };
+    (mix * gate).clamp(0.02, 1.2)
+}
+
+pub(crate) fn animate_room_light_flicker(
+    time: Res<Time>,
+    lights: Option<Res<RoomLights>>,
+    mut room_lights: Query<(&mut RoomLightVisual, &mut PointLight)>,
+) {
+    let Some(lights) = lights else {
+        return;
+    };
+
+    let dt = time.delta_seconds();
+    for (mut visual, mut point_light) in room_lights.iter_mut() {
+        let enabled = lights.is_enabled(visual.room_id);
+        let target = if enabled {
+            visual.on_intensity
+        } else {
+            visual.off_intensity
+        };
+
+        if !visual.flicker_active {
+            point_light.intensity = target;
+            continue;
+        }
+
+        visual.flicker_elapsed += dt;
+        let progress = (visual.flicker_elapsed / visual.flicker_duration).clamp(0.0, 1.0);
+        let base = visual.flicker_from + (visual.flicker_to - visual.flicker_from) * progress;
+        let turning_on = visual.flicker_to > visual.flicker_from;
+        let flicker = light_flicker_multiplier(visual.flicker_elapsed, visual.flicker_phase, turning_on);
+        let shaped = if turning_on {
+            (0.22 + flicker * 0.95).min(1.25)
+        } else {
+            flicker
+        };
+        point_light.intensity = (base * shaped).max(0.0);
+
+        if progress >= 1.0 {
+            visual.flicker_active = false;
+            visual.flicker_from = target;
+            visual.flicker_to = target;
+            point_light.intensity = target;
+        }
+    }
 }
 
 pub fn clamp_to_bounds(pos: &mut Vec3, bounds: Bounds, radius: f32) {

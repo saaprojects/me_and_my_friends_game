@@ -39,8 +39,18 @@ pub struct InvestigationState {
 pub struct PuzzleSpawned(pub bool);
 
 #[derive(Resource)]
-struct RoomLights {
+pub(crate) struct RoomLights {
     rooms: Vec<(u8, bool)>,
+}
+
+impl RoomLights {
+    pub(crate) fn is_enabled(&self, room_id: u8) -> bool {
+        self.rooms
+            .iter()
+            .find(|(id, _)| *id == room_id)
+            .map(|(_, enabled)| *enabled)
+            .unwrap_or(true)
+    }
 }
 
 #[derive(Component)]
@@ -151,14 +161,6 @@ fn reset_room_lights(lights: &mut RoomLights, house_layout: Option<&HouseLayout>
     }
 }
 
-fn room_light_enabled(lights: &RoomLights, room_id: u8) -> bool {
-    lights.rooms
-        .iter()
-        .find(|(id, _)| *id == room_id)
-        .map(|(_, enabled)| *enabled)
-        .unwrap_or(true)
-}
-
 fn toggle_room_light(lights: &mut RoomLights, room_id: u8) {
     if let Some((_, enabled)) = lights.rooms.iter_mut().find(|(id, _)| *id == room_id) {
         *enabled = !*enabled;
@@ -208,7 +210,10 @@ fn maybe_reset_puzzle(
     if menu.open {
         return;
     }
-    if spawned.0 {
+    // Only reset state when PuzzleSpawned was explicitly flipped to false
+    // (new haunt/journal confirm). Otherwise this system would overwrite
+    // ghost-controlled room lights every frame.
+    if spawned.0 || !spawned.is_changed() {
         return;
     }
 
@@ -414,7 +419,7 @@ fn update_spirit_puzzle(
         let dir = to_anchor.normalize_or_zero();
         let seen = distance <= max_distance
             && cam_forward.dot(dir) >= watch_cos
-            && room_light_enabled(&lights, anchor.room_id);
+            && lights.is_enabled(anchor.room_id);
         if seen {
             anchor.last_seen = 0.0;
         } else {

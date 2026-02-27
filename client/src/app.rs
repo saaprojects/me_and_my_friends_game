@@ -60,7 +60,7 @@ pub fn run() {
         .insert_resource(HealthChannel { rx })
         .insert_resource(AmbientLight {
             color: Color::srgb(0.7, 0.75, 0.9),
-            brightness: 0.45,
+            brightness: 0.06,
         })
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
