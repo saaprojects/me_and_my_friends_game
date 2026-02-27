@@ -178,13 +178,13 @@ impl HouseLayout {
                     color: [0.08, 0.10, 0.15],
                 },
                 WallVisual {
-                    size: Vec3::new(0.4, 4.0, 8.4),
-                    translation: Vec3::new(2.0, 2.0, -5.4),
+                    size: Vec3::new(0.4, 4.0, 8.6),
+                    translation: Vec3::new(2.0, 2.0, -5.5),
                     color: [0.09, 0.12, 0.18],
                 },
                 WallVisual {
-                    size: Vec3::new(0.4, 4.0, 8.4),
-                    translation: Vec3::new(2.0, 2.0, 5.4),
+                    size: Vec3::new(0.4, 4.0, 8.6),
+                    translation: Vec3::new(2.0, 2.0, 5.5),
                     color: [0.09, 0.12, 0.18],
                 },
             ],
@@ -326,18 +326,18 @@ impl HouseLayout {
                     color: [0.08, 0.10, 0.15],
                 },
                 WallVisual {
-                    size: Vec3::new(0.4, 4.0, 8.4),
-                    translation: Vec3::new(2.0, 2.0, -5.4),
+                    size: Vec3::new(0.4, 4.0, 8.6),
+                    translation: Vec3::new(2.0, 2.0, -5.5),
                     color: [0.09, 0.12, 0.18],
                 },
                 WallVisual {
-                    size: Vec3::new(0.4, 4.0, 8.4),
-                    translation: Vec3::new(2.0, 2.0, 5.4),
+                    size: Vec3::new(0.4, 4.0, 8.6),
+                    translation: Vec3::new(2.0, 2.0, 5.5),
                     color: [0.09, 0.12, 0.18],
                 },
                 WallVisual {
-                    size: Vec3::new(7.8, 4.0, 0.4),
-                    translation: Vec3::new(-5.7, 2.0, -2.0),
+                    size: Vec3::new(8.0, 4.0, 0.4),
+                    translation: Vec3::new(-5.8, 2.0, -2.0),
                     color: [0.09, 0.12, 0.18],
                 },
                 WallVisual {

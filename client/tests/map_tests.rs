@@ -86,11 +86,11 @@ fn house_layout_contains_wall_visuals_for_outer_and_divider_walls() {
     assert!(layout
         .walls
         .iter()
-        .any(|wall| wall.translation == Vec3::new(2.0, 2.0, -5.4) && wall.size.z >= 8.3));
+        .any(|wall| wall.translation == Vec3::new(2.0, 2.0, -5.5) && wall.size.z >= 8.5));
     assert!(layout
         .walls
         .iter()
-        .any(|wall| wall.translation == Vec3::new(2.0, 2.0, 5.4) && wall.size.z >= 8.3));
+        .any(|wall| wall.translation == Vec3::new(2.0, 2.0, 5.5) && wall.size.z >= 8.5));
 }
 
 #[test]
@@ -123,7 +123,7 @@ fn three_room_layout_adds_a_third_room_with_intentional_doorways() {
     assert!(layout
         .walls
         .iter()
-        .any(|wall| wall.translation == Vec3::new(-5.7, 2.0, -2.0) && wall.size.x >= 7.7));
+        .any(|wall| wall.translation == Vec3::new(-5.8, 2.0, -2.0) && wall.size.x >= 7.9));
     assert!(layout
         .walls
         .iter()
