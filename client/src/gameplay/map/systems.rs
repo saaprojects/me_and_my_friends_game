@@ -20,6 +20,12 @@ pub struct EnvironmentShell;
 pub struct EnvironmentDecor;
 
 #[derive(Component)]
+pub struct EnvironmentSetDressing;
+
+#[derive(Component)]
+pub struct LayoutProp;
+
+#[derive(Component)]
 pub struct RoomLightVisual {
     room_id: u8,
     on_intensity: f32,
@@ -41,6 +47,11 @@ const TWO_ROOM_SHELL_SCENE: &str = "environment/house_shell_two_room.glb#Scene0"
 const THREE_ROOM_SHELL_SCENE: &str = "environment/house_shell_three_room.glb#Scene0";
 const SHARED_SHELL_SCENE: &str = "environment/house_shell.glb#Scene0";
 const HOUSE_DECOR_SCENE: &str = "environment/house_decor.glb#Scene0";
+const WALL_SCENE: &str = "house_assets/wall.glb#Scene0";
+const WALL_VERTICAL_OVERLAP: f32 = 0.15;
+// `house_assets/wall.glb` native bounds:
+// X: [-0.05, 0.05], Y: [0.0, 2.4], Z: [-1.0, 1.0].
+const WALL_ASSET_BASE_SIZE: Vec3 = Vec3::new(0.10000004, 2.4, 2.0);
 
 fn scene_asset_file(scene_path: &str) -> &str {
     scene_path.split('#').next().unwrap_or(scene_path)
@@ -51,21 +62,35 @@ fn scene_exists(scene_path: &str) -> bool {
     Path::new("assets").join(file).exists() || Path::new("client").join("assets").join(file).exists()
 }
 
-fn shell_scene_for_house(house: &HouseLayout) -> &'static str {
-    if house.rooms.len() == 3 && scene_exists(THREE_ROOM_SHELL_SCENE) {
+fn choose_shell_scene(
+    room_count: usize,
+    has_two_room_scene: bool,
+    has_three_room_scene: bool,
+    has_shared_scene: bool,
+) -> &'static str {
+    if room_count == 3 && has_three_room_scene {
         return THREE_ROOM_SHELL_SCENE;
     }
-    if house.rooms.len() != 3 && scene_exists(TWO_ROOM_SHELL_SCENE) {
+    if room_count != 3 && has_two_room_scene {
         return TWO_ROOM_SHELL_SCENE;
     }
-    if scene_exists(SHARED_SHELL_SCENE) {
+    if has_shared_scene {
         return SHARED_SHELL_SCENE;
     }
-    if house.rooms.len() == 3 {
+    if room_count == 3 {
         THREE_ROOM_SHELL_SCENE
     } else {
         TWO_ROOM_SHELL_SCENE
     }
+}
+
+fn shell_scene_for_house(house: &HouseLayout) -> &'static str {
+    choose_shell_scene(
+        house.rooms.len(),
+        scene_exists(TWO_ROOM_SHELL_SCENE),
+        scene_exists(THREE_ROOM_SHELL_SCENE),
+        scene_exists(SHARED_SHELL_SCENE),
+    )
 }
 
 fn spawn_environment_shell(
@@ -102,6 +127,177 @@ fn spawn_environment_decor(commands: &mut Commands, asset_server: &AssetServer) 
         },
         EnvironmentDecor,
     ));
+}
+
+fn spawn_scene_if_exists(
+    commands: &mut Commands,
+    asset_server: &AssetServer,
+    scene_path: &str,
+    transform: Transform,
+) -> bool {
+    if !scene_exists(scene_path) {
+        return false;
+    }
+
+    commands.spawn((
+        SceneBundle {
+            scene: asset_server.load(scene_path.to_string()),
+            transform,
+            ..default()
+        },
+        EnvironmentSetDressing,
+    ));
+    true
+}
+
+fn spawn_fallback_props(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+) {
+    let prop_mesh_a = meshes.add(Cuboid::new(2.2, 1.2, 1.0));
+    let prop_mesh_b = meshes.add(Cuboid::new(1.4, 0.8, 1.4));
+    let prop_material_a = materials.add(Color::srgb(0.12, 0.16, 0.22));
+    let prop_material_b = materials.add(Color::srgb(0.08, 0.1, 0.15));
+    commands.spawn((
+        PbrBundle {
+            mesh: prop_mesh_a,
+            material: prop_material_a,
+            transform: Transform::from_xyz(-3.5, 0.6, -1.0),
+            ..default()
+        },
+        LayoutProp,
+    ));
+    commands.spawn((
+        PbrBundle {
+            mesh: prop_mesh_b,
+            material: prop_material_b,
+            transform: Transform::from_xyz(4.0, 0.4, 3.0),
+            ..default()
+        },
+        LayoutProp,
+    ));
+}
+
+fn spawn_curated_set_dressing(
+    commands: &mut Commands,
+    asset_server: &AssetServer,
+    house: &HouseLayout,
+) -> bool {
+    const INTERIOR: &str = "interior_assets/Models/GLTF format";
+    const HOUSE: &str = "house_assets";
+
+    let mut spawned_any = false;
+    let mut spawn = |scene: &str, translation: Vec3, yaw: f32, scale: Vec3| {
+        let path = format!("{scene}#Scene0");
+        spawned_any |= spawn_scene_if_exists(
+            commands,
+            asset_server,
+            &path,
+            Transform {
+                translation,
+                rotation: Quat::from_rotation_y(yaw),
+                scale,
+            },
+        );
+    };
+
+    // Living room cluster (main room)
+    spawn(
+        &format!("{INTERIOR}/loungeSofa.glb"),
+        Vec3::new(-6.2, 0.0, -5.8),
+        std::f32::consts::FRAC_PI_2,
+        Vec3::splat(1.35),
+    );
+    spawn(
+        &format!("{INTERIOR}/tableCoffee.glb"),
+        Vec3::new(-5.2, 0.0, -5.7),
+        0.0,
+        Vec3::splat(1.35),
+    );
+    spawn(
+        &format!("{INTERIOR}/rugRectangle.glb"),
+        Vec3::new(-5.5, 0.01, -5.7),
+        0.0,
+        Vec3::splat(1.45),
+    );
+    spawn(
+        &format!("{INTERIOR}/bookcaseClosedWide.glb"),
+        Vec3::new(-8.3, 0.0, -3.2),
+        std::f32::consts::FRAC_PI_2,
+        Vec3::splat(1.3),
+    );
+
+    // Side room cluster
+    spawn(
+        &format!("{INTERIOR}/kitchenCabinet.glb"),
+        Vec3::new(7.0, 0.0, -7.0),
+        std::f32::consts::PI,
+        Vec3::splat(1.25),
+    );
+    spawn(
+        &format!("{INTERIOR}/kitchenFridge.glb"),
+        Vec3::new(8.2, 0.0, -7.2),
+        std::f32::consts::PI,
+        Vec3::splat(1.25),
+    );
+    spawn(
+        &format!("{INTERIOR}/cabinetTelevision.glb"),
+        Vec3::new(4.0, 0.0, 3.0),
+        std::f32::consts::PI,
+        Vec3::splat(1.35),
+    );
+    spawn(
+        &format!("{INTERIOR}/plantSmall2.glb"),
+        Vec3::new(6.8, 0.0, 5.8),
+        0.0,
+        Vec3::splat(1.4),
+    );
+    spawn(
+        &format!("{INTERIOR}/lampSquareFloor.glb"),
+        Vec3::new(5.6, 0.0, 4.8),
+        0.0,
+        Vec3::splat(1.4),
+    );
+
+    // Upper room dressing only for 3-room layout
+    if house.rooms.len() >= 3 {
+        spawn(
+            &format!("{INTERIOR}/desk.glb"),
+            Vec3::new(-4.2, 0.0, 6.6),
+            std::f32::consts::PI,
+            Vec3::splat(1.35),
+        );
+        spawn(
+            &format!("{INTERIOR}/chairDesk.glb"),
+            Vec3::new(-4.2, 0.0, 5.8),
+            0.0,
+            Vec3::splat(1.35),
+        );
+        spawn(
+            &format!("{INTERIOR}/lampSquareCeiling.glb"),
+            Vec3::new(-4.0, 3.1, 6.0),
+            0.0,
+            Vec3::splat(1.5),
+        );
+    }
+
+    // Structural flavor pieces from house kit
+    for corner in [
+        Vec3::new(-9.2, 0.0, -9.2),
+        Vec3::new(9.2, 0.0, -9.2),
+        Vec3::new(-9.2, 0.0, 9.2),
+        Vec3::new(9.2, 0.0, 9.2),
+    ] {
+        spawn(
+            &format!("{HOUSE}/column-wide.glb"),
+            corner,
+            0.0,
+            Vec3::splat(1.5),
+        );
+    }
+
+    spawned_any
 }
 
 pub fn room_id_in_house(layout: &HouseLayout, position: Vec3) -> Option<u8> {
@@ -144,32 +340,24 @@ pub(crate) fn setup_scene(
 
     let shell_loaded = spawn_environment_shell(&mut commands, &asset_server, &house);
     if !shell_loaded {
-        spawn_layout_walls(&mut commands, &mut meshes, &mut materials, &house);
+        spawn_layout_walls(
+            &mut commands,
+            &asset_server,
+            &mut meshes,
+            &mut materials,
+            &house,
+        );
         spawn_layout_roof(&mut commands, &mut meshes, &mut materials, &house);
     }
     spawn_environment_decor(&mut commands, &asset_server);
+    if !spawn_curated_set_dressing(&mut commands, &asset_server, &house) {
+        spawn_fallback_props(&mut commands, &mut meshes, &mut materials);
+    }
     spawn_room_lights(
         &mut commands,
         &house,
         room_lights.as_deref(),
     );
-
-    let prop_mesh_a = meshes.add(Cuboid::new(2.2, 1.2, 1.0));
-    let prop_mesh_b = meshes.add(Cuboid::new(1.4, 0.8, 1.4));
-    let prop_material_a = materials.add(Color::srgb(0.12, 0.16, 0.22));
-    let prop_material_b = materials.add(Color::srgb(0.08, 0.1, 0.15));
-    commands.spawn(PbrBundle {
-        mesh: prop_mesh_a,
-        material: prop_material_a,
-        transform: Transform::from_xyz(-3.5, 0.6, -1.0),
-        ..default()
-    });
-    commands.spawn(PbrBundle {
-        mesh: prop_mesh_b,
-        material: prop_material_b,
-        transform: Transform::from_xyz(4.0, 0.4, 3.0),
-        ..default()
-    });
 
     let player_mesh = meshes.add(Cuboid::new(0.7, 1.8, 0.7));
     let player_material = materials.add(StandardMaterial {
@@ -224,20 +412,66 @@ pub(crate) fn setup_scene(
 
 fn spawn_layout_walls(
     commands: &mut Commands,
+    asset_server: &AssetServer,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
     house: &HouseLayout,
 ) {
+    let use_wall_scene = scene_exists(WALL_SCENE);
     for wall in &house.walls {
+        let render_size = wall_render_size(wall.size);
+        let render_center = wall_render_center(wall.translation, wall.size, render_size);
+        // Seam-proof core wall: always present so floor/ceiling joins are airtight.
         commands.spawn((
             PbrBundle {
-                mesh: meshes.add(Cuboid::new(wall.size.x, wall.size.y, wall.size.z)),
+                mesh: meshes.add(Cuboid::new(render_size.x, render_size.y, render_size.z)),
                 material: materials.add(Color::srgb(wall.color[0], wall.color[1], wall.color[2])),
-                transform: Transform::from_translation(wall.translation),
+                transform: Transform::from_translation(render_center),
                 ..default()
             },
             LayoutWall,
         ));
+
+        // Decorative skin from house asset kit (optional).
+        if use_wall_scene {
+            commands.spawn((
+                SceneBundle {
+                    scene: asset_server.load(WALL_SCENE),
+                    transform: wall_scene_transform(render_center, render_size),
+                    ..default()
+                },
+                LayoutWall,
+            ));
+        }
+    }
+}
+
+fn wall_render_size(layout_size: Vec3) -> Vec3 {
+    Vec3::new(
+        layout_size.x,
+        (layout_size.y + WALL_VERTICAL_OVERLAP * 2.0).max(layout_size.y),
+        layout_size.z,
+    )
+}
+
+fn wall_render_center(layout_center: Vec3, layout_size: Vec3, render_size: Vec3) -> Vec3 {
+    Vec3::new(
+        layout_center.x,
+        layout_center.y + (render_size.y - layout_size.y) * 0.5,
+        layout_center.z,
+    )
+}
+
+fn wall_scene_transform(center: Vec3, render_size: Vec3) -> Transform {
+    Transform {
+        // Mesh origin is at the base (Y=0), not center, so offset down by half target height.
+        translation: Vec3::new(center.x, center.y - render_size.y * 0.5, center.z),
+        rotation: Quat::IDENTITY,
+        scale: Vec3::new(
+            render_size.x / WALL_ASSET_BASE_SIZE.x,
+            render_size.y / WALL_ASSET_BASE_SIZE.y,
+            render_size.z / WALL_ASSET_BASE_SIZE.z,
+        ),
     }
 }
 
@@ -247,17 +481,54 @@ fn spawn_layout_roof(
     materials: &mut Assets<StandardMaterial>,
     house: &HouseLayout,
 ) {
-    let roof_size_x = (house.bounds.max_x - house.bounds.min_x) + 1.2;
-    let roof_size_z = (house.bounds.max_z - house.bounds.min_z) + 1.2;
+    let (roof_size_x, roof_size_z, roof_y) = roof_dimensions(house);
     commands.spawn((
         PbrBundle {
             mesh: meshes.add(Cuboid::new(roof_size_x, 0.35, roof_size_z)),
             material: materials.add(Color::srgb(0.12, 0.14, 0.18)),
-            transform: Transform::from_xyz(0.0, 4.175, 0.0),
+            transform: Transform::from_xyz(0.0, roof_y, 0.0),
             ..default()
         },
         LayoutRoof,
     ));
+}
+
+fn roof_dimensions(house: &HouseLayout) -> (f32, f32, f32) {
+    const ROOF_THICKNESS: f32 = 0.35;
+    const ROOF_OVERHANG_PER_SIDE: f32 = 0.04;
+    const ROOF_WALL_OVERLAP_Y: f32 = 0.03;
+
+    if house.walls.is_empty() {
+        let roof_size_x = (house.bounds.max_x - house.bounds.min_x) + 0.4 + ROOF_OVERHANG_PER_SIDE * 2.0;
+        let roof_size_z = (house.bounds.max_z - house.bounds.min_z) + 0.4 + ROOF_OVERHANG_PER_SIDE * 2.0;
+        return (
+            roof_size_x,
+            roof_size_z,
+            4.0 - ROOF_WALL_OVERLAP_Y + ROOF_THICKNESS * 0.5,
+        );
+    }
+
+    let mut min_x = f32::INFINITY;
+    let mut max_x = f32::NEG_INFINITY;
+    let mut min_z = f32::INFINITY;
+    let mut max_z = f32::NEG_INFINITY;
+    let mut max_wall_top = f32::NEG_INFINITY;
+
+    for wall in &house.walls {
+        let half_x = wall.size.x * 0.5;
+        let half_z = wall.size.z * 0.5;
+        min_x = min_x.min(wall.translation.x - half_x);
+        max_x = max_x.max(wall.translation.x + half_x);
+        min_z = min_z.min(wall.translation.z - half_z);
+        max_z = max_z.max(wall.translation.z + half_z);
+        max_wall_top = max_wall_top.max(wall.translation.y + wall.size.y * 0.5);
+    }
+
+    (
+        (max_x - min_x).max(0.1) + ROOF_OVERHANG_PER_SIDE * 2.0,
+        (max_z - min_z).max(0.1) + ROOF_OVERHANG_PER_SIDE * 2.0,
+        max_wall_top - ROOF_WALL_OVERLAP_Y + ROOF_THICKNESS * 0.5,
+    )
 }
 
 fn room_light_range(bounds: Bounds) -> f32 {
@@ -295,7 +566,8 @@ fn spawn_room_lights(commands: &mut Commands, house: &HouseLayout, lights: Optio
                         color: Color::srgb(1.0, 0.98, 0.92),
                         intensity: initial_intensity,
                         range: room_light_range(room.bounds),
-                        shadows_enabled: true,
+                        // Prevent contact-offset artifacts that appear as fake gaps.
+                        shadows_enabled: false,
                         ..default()
                     },
                     transform: Transform::from_translation(position),
@@ -332,6 +604,8 @@ pub(crate) fn sync_layout_walls(
     roofs: Query<Entity, With<LayoutRoof>>,
     shell_entities: Query<Entity, With<EnvironmentShell>>,
     decor_entities: Query<Entity, With<EnvironmentDecor>>,
+    set_dressing_entities: Query<Entity, With<EnvironmentSetDressing>>,
+    layout_props: Query<Entity, With<LayoutProp>>,
     room_lights_visuals: Query<Entity, With<RoomLightVisual>>,
 ) {
     if !house.is_changed() {
@@ -350,15 +624,30 @@ pub(crate) fn sync_layout_walls(
     for entity in decor_entities.iter() {
         commands.entity(entity).despawn_recursive();
     }
+    for entity in set_dressing_entities.iter() {
+        commands.entity(entity).despawn_recursive();
+    }
+    for entity in layout_props.iter() {
+        commands.entity(entity).despawn_recursive();
+    }
     for entity in room_lights_visuals.iter() {
         commands.entity(entity).despawn_recursive();
     }
     let shell_loaded = spawn_environment_shell(&mut commands, &asset_server, &house);
     if !shell_loaded {
-        spawn_layout_walls(&mut commands, &mut meshes, &mut materials, &house);
+        spawn_layout_walls(
+            &mut commands,
+            &asset_server,
+            &mut meshes,
+            &mut materials,
+            &house,
+        );
         spawn_layout_roof(&mut commands, &mut meshes, &mut materials, &house);
     }
     spawn_environment_decor(&mut commands, &asset_server);
+    if !spawn_curated_set_dressing(&mut commands, &asset_server, &house) {
+        spawn_fallback_props(&mut commands, &mut meshes, &mut materials);
+    }
     spawn_room_lights(
         &mut commands,
         &house,
@@ -599,4 +888,185 @@ pub fn shortest_angle(current: f32, target: f32) -> f32 {
         diff += std::f32::consts::TAU;
     }
     diff
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn choose_shell_scene_prefers_three_room_variant_when_available() {
+        let chosen = choose_shell_scene(3, true, true, true);
+        assert_eq!(chosen, THREE_ROOM_SHELL_SCENE);
+    }
+
+    #[test]
+    fn choose_shell_scene_prefers_two_room_variant_when_available() {
+        let chosen = choose_shell_scene(2, true, false, true);
+        assert_eq!(chosen, TWO_ROOM_SHELL_SCENE);
+    }
+
+    #[test]
+    fn choose_shell_scene_uses_shared_when_specific_variant_missing() {
+        let chosen = choose_shell_scene(3, false, false, true);
+        assert_eq!(chosen, SHARED_SHELL_SCENE);
+    }
+
+    #[test]
+    fn choose_shell_scene_falls_back_to_expected_specific_name_when_no_assets_exist() {
+        assert_eq!(
+            choose_shell_scene(3, false, false, false),
+            THREE_ROOM_SHELL_SCENE
+        );
+        assert_eq!(
+            choose_shell_scene(2, false, false, false),
+            TWO_ROOM_SHELL_SCENE
+        );
+    }
+
+    #[test]
+    fn room_light_range_stays_within_intended_clamp_bounds() {
+        let small = room_light_range(Bounds {
+            min_x: 0.0,
+            max_x: 1.0,
+            min_z: 0.0,
+            max_z: 1.0,
+        });
+        let huge = room_light_range(Bounds {
+            min_x: -50.0,
+            max_x: 50.0,
+            min_z: -50.0,
+            max_z: 50.0,
+        });
+        assert!(small >= 10.0 && small <= 16.0);
+        assert!(huge >= 10.0 && huge <= 16.0);
+    }
+
+    #[test]
+    fn light_flicker_multiplier_is_bounded_for_on_and_off_paths() {
+        for elapsed in [0.0, 0.02, 0.07, 0.15, 0.33, 0.61] {
+            let on_value = light_flicker_multiplier(elapsed, 1.7, true);
+            let off_value = light_flicker_multiplier(elapsed, 1.7, false);
+            assert!((0.02..=1.2).contains(&on_value));
+            assert!((0.02..=1.2).contains(&off_value));
+        }
+    }
+
+    #[test]
+    fn wall_render_size_adds_vertical_overlap_only() {
+        let input = Vec3::new(0.4, 4.0, 8.6);
+        let out = wall_render_size(input);
+        assert!((out.x - input.x).abs() < 0.0001);
+        assert!((out.z - input.z).abs() < 0.0001);
+        assert!((out.y - (input.y + WALL_VERTICAL_OVERLAP * 2.0)).abs() < 0.0001);
+    }
+
+    #[test]
+    fn wall_render_center_keeps_floor_contact_and_extends_upward() {
+        let layout_center = Vec3::new(2.0, 2.0, -5.5);
+        let layout_size = Vec3::new(0.4, 4.0, 8.6);
+        let render_size = wall_render_size(layout_size);
+        let render_center = wall_render_center(layout_center, layout_size, render_size);
+
+        let layout_bottom = layout_center.y - layout_size.y * 0.5;
+        let render_bottom = render_center.y - render_size.y * 0.5;
+        let render_top = render_center.y + render_size.y * 0.5;
+        let layout_top = layout_center.y + layout_size.y * 0.5;
+
+        assert!((render_bottom - layout_bottom).abs() < 0.0001);
+        assert!(render_top > layout_top);
+    }
+
+    #[test]
+    fn wall_scene_transform_accounts_for_bottom_anchored_asset_origin() {
+        let center = Vec3::new(2.0, 2.0, -5.5);
+        let render_size = Vec3::new(0.4, 4.3, 8.6);
+        let transform = wall_scene_transform(center, render_size);
+
+        assert!((transform.translation.x - center.x).abs() < 0.0001);
+        assert!((transform.translation.z - center.z).abs() < 0.0001);
+        assert!((transform.translation.y - (center.y - render_size.y * 0.5)).abs() < 0.0001);
+        assert!((transform.scale.x - (render_size.x / WALL_ASSET_BASE_SIZE.x)).abs() < 0.0001);
+        assert!((transform.scale.y - (render_size.y / WALL_ASSET_BASE_SIZE.y)).abs() < 0.0001);
+        assert!((transform.scale.z - (render_size.z / WALL_ASSET_BASE_SIZE.z)).abs() < 0.0001);
+    }
+
+    #[test]
+    fn roof_dimensions_match_outer_wall_extents_for_two_room_layout() {
+        let house = HouseLayout::two_room();
+        let (roof_x, roof_z, roof_y) = roof_dimensions(&house);
+
+        let mut min_x = f32::INFINITY;
+        let mut max_x = f32::NEG_INFINITY;
+        let mut min_z = f32::INFINITY;
+        let mut max_z = f32::NEG_INFINITY;
+        let mut wall_top = f32::NEG_INFINITY;
+        for wall in &house.walls {
+            let hx = wall.size.x * 0.5;
+            let hz = wall.size.z * 0.5;
+            min_x = min_x.min(wall.translation.x - hx);
+            max_x = max_x.max(wall.translation.x + hx);
+            min_z = min_z.min(wall.translation.z - hz);
+            max_z = max_z.max(wall.translation.z + hz);
+            wall_top = wall_top.max(wall.translation.y + wall.size.y * 0.5);
+        }
+
+        assert!(roof_x > (max_x - min_x));
+        assert!(roof_z > (max_z - min_z));
+        assert!(roof_x - (max_x - min_x) <= 0.1);
+        assert!(roof_z - (max_z - min_z) <= 0.1);
+        assert!(roof_y < (wall_top + 0.175));
+        assert!((roof_y - (wall_top + 0.145)).abs() < 0.0001);
+    }
+
+    #[test]
+    fn roof_dimensions_match_outer_wall_extents_for_three_room_layout() {
+        let house = HouseLayout::three_room();
+        let (roof_x, roof_z, roof_y) = roof_dimensions(&house);
+
+        let mut min_x = f32::INFINITY;
+        let mut max_x = f32::NEG_INFINITY;
+        let mut min_z = f32::INFINITY;
+        let mut max_z = f32::NEG_INFINITY;
+        let mut wall_top = f32::NEG_INFINITY;
+        for wall in &house.walls {
+            let hx = wall.size.x * 0.5;
+            let hz = wall.size.z * 0.5;
+            min_x = min_x.min(wall.translation.x - hx);
+            max_x = max_x.max(wall.translation.x + hx);
+            min_z = min_z.min(wall.translation.z - hz);
+            max_z = max_z.max(wall.translation.z + hz);
+            wall_top = wall_top.max(wall.translation.y + wall.size.y * 0.5);
+        }
+
+        assert!(roof_x > (max_x - min_x));
+        assert!(roof_z > (max_z - min_z));
+        assert!(roof_x - (max_x - min_x) <= 0.1);
+        assert!(roof_z - (max_z - min_z) <= 0.1);
+        assert!(roof_y < (wall_top + 0.175));
+        assert!((roof_y - (wall_top + 0.145)).abs() < 0.0001);
+    }
+
+    #[test]
+    fn rendered_walls_overlap_floor_and_roof_to_avoid_visible_seams() {
+        for house in [HouseLayout::two_room(), HouseLayout::three_room()] {
+            let (_roof_x, _roof_z, roof_y) = roof_dimensions(&house);
+            let roof_bottom = roof_y - 0.35 * 0.5;
+            for wall in &house.walls {
+                let render_size = wall_render_size(wall.size);
+                let render_center = wall_render_center(wall.translation, wall.size, render_size);
+                let wall_bottom = render_center.y - render_size.y * 0.5;
+                let wall_top = render_center.y + render_size.y * 0.5;
+                let original_bottom = wall.translation.y - wall.size.y * 0.5;
+                assert!(
+                    (wall_bottom - original_bottom).abs() < 0.0001,
+                    "wall bottom should stay flush with floor"
+                );
+                assert!(
+                    roof_bottom < wall_top,
+                    "roof bottom should overlap wall top to prevent seam"
+                );
+            }
+        }
+    }
 }
