@@ -62,3 +62,4 @@ cargo test -p client --test ui_flow_tests
 ## Notes
 - The client polls the backend health endpoint every 2 seconds.
 - The ghost is blocked by outer walls only; the investigator collides with all walls/props.
+- Optional modular environment assets can be dropped into `assets/environment/` (see [`ASSET_SETUP.md`](assets/environment/ASSET_SETUP.md)).

@@ -3,6 +3,7 @@ use crate::prelude::*;
 use crate::gameplay::exorcism::RoomLights;
 use crate::gameplay::ghost::GhostMarker;
 use crate::gameplay::investigator::Player;
+use std::path::Path;
 
 use super::components::{Bounds, HouseLayout, Obstacle};
 
@@ -11,6 +12,12 @@ pub struct LayoutWall;
 
 #[derive(Component)]
 pub struct LayoutRoof;
+
+#[derive(Component)]
+pub struct EnvironmentShell;
+
+#[derive(Component)]
+pub struct EnvironmentDecor;
 
 #[derive(Component)]
 pub struct RoomLightVisual {
@@ -28,6 +35,73 @@ pub struct RoomLightVisual {
 
 pub fn default_house_layout() -> HouseLayout {
     HouseLayout::two_room()
+}
+
+const TWO_ROOM_SHELL_SCENE: &str = "environment/house_shell_two_room.glb#Scene0";
+const THREE_ROOM_SHELL_SCENE: &str = "environment/house_shell_three_room.glb#Scene0";
+const SHARED_SHELL_SCENE: &str = "environment/house_shell.glb#Scene0";
+const HOUSE_DECOR_SCENE: &str = "environment/house_decor.glb#Scene0";
+
+fn scene_asset_file(scene_path: &str) -> &str {
+    scene_path.split('#').next().unwrap_or(scene_path)
+}
+
+fn scene_exists(scene_path: &str) -> bool {
+    let file = scene_asset_file(scene_path);
+    Path::new("assets").join(file).exists() || Path::new("client").join("assets").join(file).exists()
+}
+
+fn shell_scene_for_house(house: &HouseLayout) -> &'static str {
+    if house.rooms.len() == 3 && scene_exists(THREE_ROOM_SHELL_SCENE) {
+        return THREE_ROOM_SHELL_SCENE;
+    }
+    if house.rooms.len() != 3 && scene_exists(TWO_ROOM_SHELL_SCENE) {
+        return TWO_ROOM_SHELL_SCENE;
+    }
+    if scene_exists(SHARED_SHELL_SCENE) {
+        return SHARED_SHELL_SCENE;
+    }
+    if house.rooms.len() == 3 {
+        THREE_ROOM_SHELL_SCENE
+    } else {
+        TWO_ROOM_SHELL_SCENE
+    }
+}
+
+fn spawn_environment_shell(
+    commands: &mut Commands,
+    asset_server: &AssetServer,
+    house: &HouseLayout,
+) -> bool {
+    let shell_scene = shell_scene_for_house(house);
+    if !scene_exists(shell_scene) {
+        return false;
+    }
+
+    commands.spawn((
+        SceneBundle {
+            scene: asset_server.load(shell_scene),
+            transform: Transform::from_xyz(0.0, 0.0, 0.0),
+            ..default()
+        },
+        EnvironmentShell,
+    ));
+    true
+}
+
+fn spawn_environment_decor(commands: &mut Commands, asset_server: &AssetServer) {
+    if !scene_exists(HOUSE_DECOR_SCENE) {
+        return;
+    }
+
+    commands.spawn((
+        SceneBundle {
+            scene: asset_server.load(HOUSE_DECOR_SCENE),
+            transform: Transform::from_xyz(0.0, 0.0, 0.0),
+            ..default()
+        },
+        EnvironmentDecor,
+    ));
 }
 
 pub fn room_id_in_house(layout: &HouseLayout, position: Vec3) -> Option<u8> {
@@ -55,6 +129,7 @@ pub(crate) fn setup_scene(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    asset_server: Res<AssetServer>,
     house: Res<HouseLayout>,
     room_lights: Option<Res<RoomLights>>,
 ) {
@@ -67,8 +142,12 @@ pub(crate) fn setup_scene(
         ..default()
     });
 
-    spawn_layout_walls(&mut commands, &mut meshes, &mut materials, &house);
-    spawn_layout_roof(&mut commands, &mut meshes, &mut materials, &house);
+    let shell_loaded = spawn_environment_shell(&mut commands, &asset_server, &house);
+    if !shell_loaded {
+        spawn_layout_walls(&mut commands, &mut meshes, &mut materials, &house);
+        spawn_layout_roof(&mut commands, &mut meshes, &mut materials, &house);
+    }
+    spawn_environment_decor(&mut commands, &asset_server);
     spawn_room_lights(
         &mut commands,
         &house,
@@ -247,9 +326,12 @@ pub(crate) fn sync_layout_walls(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    asset_server: Res<AssetServer>,
     room_lights: Option<Res<RoomLights>>,
     walls: Query<Entity, With<LayoutWall>>,
     roofs: Query<Entity, With<LayoutRoof>>,
+    shell_entities: Query<Entity, With<EnvironmentShell>>,
+    decor_entities: Query<Entity, With<EnvironmentDecor>>,
     room_lights_visuals: Query<Entity, With<RoomLightVisual>>,
 ) {
     if !house.is_changed() {
@@ -262,11 +344,21 @@ pub(crate) fn sync_layout_walls(
     for entity in roofs.iter() {
         commands.entity(entity).despawn_recursive();
     }
+    for entity in shell_entities.iter() {
+        commands.entity(entity).despawn_recursive();
+    }
+    for entity in decor_entities.iter() {
+        commands.entity(entity).despawn_recursive();
+    }
     for entity in room_lights_visuals.iter() {
         commands.entity(entity).despawn_recursive();
     }
-    spawn_layout_walls(&mut commands, &mut meshes, &mut materials, &house);
-    spawn_layout_roof(&mut commands, &mut meshes, &mut materials, &house);
+    let shell_loaded = spawn_environment_shell(&mut commands, &asset_server, &house);
+    if !shell_loaded {
+        spawn_layout_walls(&mut commands, &mut meshes, &mut materials, &house);
+        spawn_layout_roof(&mut commands, &mut meshes, &mut materials, &house);
+    }
+    spawn_environment_decor(&mut commands, &asset_server);
     spawn_room_lights(
         &mut commands,
         &house,
