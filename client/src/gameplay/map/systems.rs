@@ -48,7 +48,12 @@ const THREE_ROOM_SHELL_SCENE: &str = "environment/house_shell_three_room.glb#Sce
 const SHARED_SHELL_SCENE: &str = "environment/house_shell.glb#Scene0";
 const HOUSE_DECOR_SCENE: &str = "environment/house_decor.glb#Scene0";
 const WALL_SCENE: &str = "house_assets/wall.glb#Scene0";
+const ROOF_THICKNESS: f32 = 0.35;
+const ROOF_OVERHANG_PER_SIDE: f32 = 0.12;
+const ROOF_WALL_OVERLAP_Y: f32 = 0.08;
+const WALL_HORIZONTAL_OVERLAP: f32 = 0.06;
 const WALL_VERTICAL_OVERLAP: f32 = 0.15;
+const ENABLE_WALL_SCENE_SKIN: bool = false;
 // `house_assets/wall.glb` native bounds:
 // X: [-0.05, 0.05], Y: [0.0, 2.4], Z: [-1.0, 1.0].
 const WALL_ASSET_BASE_SIZE: Vec3 = Vec3::new(0.10000004, 2.4, 2.0);
@@ -185,7 +190,6 @@ fn spawn_curated_set_dressing(
     house: &HouseLayout,
 ) -> bool {
     const INTERIOR: &str = "interior_assets/Models/GLTF format";
-    const HOUSE: &str = "house_assets";
 
     let mut spawned_any = false;
     let mut spawn = |scene: &str, translation: Vec3, yaw: f32, scale: Vec3| {
@@ -277,21 +281,6 @@ fn spawn_curated_set_dressing(
         spawn(
             &format!("{INTERIOR}/lampSquareCeiling.glb"),
             Vec3::new(-4.0, 3.1, 6.0),
-            0.0,
-            Vec3::splat(1.5),
-        );
-    }
-
-    // Structural flavor pieces from house kit
-    for corner in [
-        Vec3::new(-9.2, 0.0, -9.2),
-        Vec3::new(9.2, 0.0, -9.2),
-        Vec3::new(-9.2, 0.0, 9.2),
-        Vec3::new(9.2, 0.0, 9.2),
-    ] {
-        spawn(
-            &format!("{HOUSE}/column-wide.glb"),
-            corner,
             0.0,
             Vec3::splat(1.5),
         );
@@ -417,7 +406,7 @@ fn spawn_layout_walls(
     materials: &mut Assets<StandardMaterial>,
     house: &HouseLayout,
 ) {
-    let use_wall_scene = scene_exists(WALL_SCENE);
+    let use_wall_scene = ENABLE_WALL_SCENE_SKIN && scene_exists(WALL_SCENE);
     for wall in &house.walls {
         let render_size = wall_render_size(wall.size);
         let render_center = wall_render_center(wall.translation, wall.size, render_size);
@@ -448,9 +437,9 @@ fn spawn_layout_walls(
 
 fn wall_render_size(layout_size: Vec3) -> Vec3 {
     Vec3::new(
-        layout_size.x,
+        layout_size.x + WALL_HORIZONTAL_OVERLAP * 2.0,
         (layout_size.y + WALL_VERTICAL_OVERLAP * 2.0).max(layout_size.y),
-        layout_size.z,
+        layout_size.z + WALL_HORIZONTAL_OVERLAP * 2.0,
     )
 }
 
@@ -494,10 +483,6 @@ fn spawn_layout_roof(
 }
 
 fn roof_dimensions(house: &HouseLayout) -> (f32, f32, f32) {
-    const ROOF_THICKNESS: f32 = 0.35;
-    const ROOF_OVERHANG_PER_SIDE: f32 = 0.04;
-    const ROOF_WALL_OVERLAP_Y: f32 = 0.03;
-
     if house.walls.is_empty() {
         let roof_size_x = (house.bounds.max_x - house.bounds.min_x) + 0.4 + ROOF_OVERHANG_PER_SIDE * 2.0;
         let roof_size_z = (house.bounds.max_z - house.bounds.min_z) + 0.4 + ROOF_OVERHANG_PER_SIDE * 2.0;
@@ -566,8 +551,9 @@ fn spawn_room_lights(commands: &mut Commands, house: &HouseLayout, lights: Optio
                         color: Color::srgb(1.0, 0.98, 0.92),
                         intensity: initial_intensity,
                         range: room_light_range(room.bounds),
-                        // Prevent contact-offset artifacts that appear as fake gaps.
-                        shadows_enabled: false,
+                        shadows_enabled: true,
+                        shadow_depth_bias: 0.005,
+                        shadow_normal_bias: 0.005,
                         ..default()
                     },
                     transform: Transform::from_translation(position),
@@ -953,11 +939,11 @@ mod tests {
     }
 
     #[test]
-    fn wall_render_size_adds_vertical_overlap_only() {
+    fn wall_render_size_adds_axis_overlaps() {
         let input = Vec3::new(0.4, 4.0, 8.6);
         let out = wall_render_size(input);
-        assert!((out.x - input.x).abs() < 0.0001);
-        assert!((out.z - input.z).abs() < 0.0001);
+        assert!((out.x - (input.x + WALL_HORIZONTAL_OVERLAP * 2.0)).abs() < 0.0001);
+        assert!((out.z - (input.z + WALL_HORIZONTAL_OVERLAP * 2.0)).abs() < 0.0001);
         assert!((out.y - (input.y + WALL_VERTICAL_OVERLAP * 2.0)).abs() < 0.0001);
     }
 
@@ -1013,10 +999,10 @@ mod tests {
 
         assert!(roof_x > (max_x - min_x));
         assert!(roof_z > (max_z - min_z));
-        assert!(roof_x - (max_x - min_x) <= 0.1);
-        assert!(roof_z - (max_z - min_z) <= 0.1);
-        assert!(roof_y < (wall_top + 0.175));
-        assert!((roof_y - (wall_top + 0.145)).abs() < 0.0001);
+        assert!((roof_x - (max_x - min_x) - ROOF_OVERHANG_PER_SIDE * 2.0).abs() < 0.0001);
+        assert!((roof_z - (max_z - min_z) - ROOF_OVERHANG_PER_SIDE * 2.0).abs() < 0.0001);
+        let expected_y = wall_top + ROOF_THICKNESS * 0.5 - ROOF_WALL_OVERLAP_Y;
+        assert!((roof_y - expected_y).abs() < 0.0001);
     }
 
     #[test]
@@ -1041,17 +1027,17 @@ mod tests {
 
         assert!(roof_x > (max_x - min_x));
         assert!(roof_z > (max_z - min_z));
-        assert!(roof_x - (max_x - min_x) <= 0.1);
-        assert!(roof_z - (max_z - min_z) <= 0.1);
-        assert!(roof_y < (wall_top + 0.175));
-        assert!((roof_y - (wall_top + 0.145)).abs() < 0.0001);
+        assert!((roof_x - (max_x - min_x) - ROOF_OVERHANG_PER_SIDE * 2.0).abs() < 0.0001);
+        assert!((roof_z - (max_z - min_z) - ROOF_OVERHANG_PER_SIDE * 2.0).abs() < 0.0001);
+        let expected_y = wall_top + ROOF_THICKNESS * 0.5 - ROOF_WALL_OVERLAP_Y;
+        assert!((roof_y - expected_y).abs() < 0.0001);
     }
 
     #[test]
     fn rendered_walls_overlap_floor_and_roof_to_avoid_visible_seams() {
         for house in [HouseLayout::two_room(), HouseLayout::three_room()] {
             let (_roof_x, _roof_z, roof_y) = roof_dimensions(&house);
-            let roof_bottom = roof_y - 0.35 * 0.5;
+            let roof_bottom = roof_y - ROOF_THICKNESS * 0.5;
             for wall in &house.walls {
                 let render_size = wall_render_size(wall.size);
                 let render_center = wall_render_center(wall.translation, wall.size, render_size);
