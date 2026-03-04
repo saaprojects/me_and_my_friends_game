@@ -82,3 +82,7 @@ pub fn investigator_movement_system(
         }
     }
 }
+
+#[cfg(test)]
+#[path = "systems_tests.rs"]
+mod systems_tests;

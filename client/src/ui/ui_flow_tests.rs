@@ -1,21 +1,21 @@
 use bevy::prelude::*;
 use bevy::window::{Cursor, PrimaryWindow};
 
-use client::core::{
+use crate::core::{
     Equipment, GhostType, GhostTypeState, JournalState, MenuFlowState, MenuScreen, MenuState, Role,
     RoleState, SessionState,
 };
-use client::core::CameraControl;
-use client::gameplay::evidence::EvidenceTuning;
-use client::gameplay::exorcism::{
+use crate::core::CameraControl;
+use crate::gameplay::evidence::EvidenceTuning;
+use crate::gameplay::exorcism::{
     ExorcismPlugin, ExorcismStatus, InvestigationState, PuzzleSpawned, SpiritMarker,
 };
-use client::gameplay::ghost::GhostState;
-use client::gameplay::investigator::tools::{update_emf_reading, EquipmentState, EvidenceState};
-use client::gameplay::map::{HouseLayout, HouseLayoutKind, HouseLayoutSelection};
-use client::gameplay::map::components::{Bounds, CollisionWorld, RoomZone};
-use client::ui::hud;
-use client::ui::*;
+use crate::gameplay::ghost::GhostState;
+use crate::gameplay::investigator::tools::{update_emf_reading, EquipmentState, EvidenceState};
+use crate::gameplay::map::{HouseLayout, HouseLayoutKind, HouseLayoutSelection};
+use crate::gameplay::map::components::{Bounds, CollisionWorld, RoomZone};
+use crate::ui::hud;
+use crate::ui::*;
 
 #[test]
 fn journal_confirm_updates_investigation_state() {
@@ -174,13 +174,13 @@ fn puzzle_title_waits_for_confirmation() {
     app.insert_resource(InvestigationState::default());
     app.insert_resource(JournalState { open: false });
     app.insert_resource(ExorcismStatus {
-        state: client::gameplay::exorcism::ExorcismState::Inactive,
+        state: crate::gameplay::exorcism::ExorcismState::Inactive,
         progress: 0.0,
         stage: 0,
         stacks: 0.0,
         max_stacks: 0.0,
     });
-    app.insert_resource(client::gameplay::exorcism::tables::ExorcismTables::default());
+    app.insert_resource(crate::gameplay::exorcism::tables::ExorcismTables::default());
     app.insert_resource(EquipmentState {
         active: Equipment::Emf,
         emf_level: 0,
@@ -190,7 +190,7 @@ fn puzzle_title_waits_for_confirmation() {
         spiritbox_message: "Silence...".to_string(),
         spiritbox_cooldown: 0.0,
     });
-    app.insert_resource(client::gameplay::investigator::tools::EvidenceState::default());
+    app.insert_resource(crate::gameplay::investigator::tools::EvidenceState::default());
     app.insert_resource(EvidenceTuning::default());
 
     let entity = app
@@ -210,7 +210,7 @@ fn puzzle_title_waits_for_confirmation() {
 #[test]
 fn start_screen_visible_when_menu_open() {
     let mut app = App::new();
-    app.add_systems(Update, client::ui::lobby::sync_start_screen_visibility);
+    app.add_systems(Update, crate::ui::lobby::sync_start_screen_visibility);
     app.insert_resource(MenuState {
         open: true,
         selected_role: Role::Ghost,
@@ -233,7 +233,7 @@ fn start_screen_visible_when_menu_open() {
 #[test]
 fn role_select_visible_when_screen_active() {
     let mut app = App::new();
-    app.add_systems(Update, client::ui::lobby::sync_role_select_visibility);
+    app.add_systems(Update, crate::ui::lobby::sync_role_select_visibility);
     app.insert_resource(MenuState {
         open: true,
         selected_role: Role::Ghost,
@@ -257,7 +257,7 @@ fn role_select_visible_when_screen_active() {
 fn start_button_moves_to_role_select() {
     let mut app = App::new();
     app.add_event::<AppExit>();
-    app.add_systems(Update, client::ui::lobby::handle_menu_interactions);
+    app.add_systems(Update, crate::ui::lobby::handle_menu_interactions);
     app.insert_resource(MenuState {
         open: true,
         selected_role: Role::Ghost,
@@ -268,7 +268,7 @@ fn start_button_moves_to_role_select() {
     app.insert_resource(RoleState {
         current: Role::Ghost,
     });
-    app.insert_resource(client::core::RoleYaw {
+    app.insert_resource(crate::core::RoleYaw {
         ghost: 0.0,
         investigator: 0.0,
     });
@@ -306,7 +306,7 @@ fn start_button_moves_to_role_select() {
 fn room_count_selection_changes_only_on_ghost_detail_screen() {
     let mut app = App::new();
     app.add_event::<AppExit>();
-    app.add_systems(Update, client::ui::lobby::handle_menu_interactions);
+    app.add_systems(Update, crate::ui::lobby::handle_menu_interactions);
     app.insert_resource(MenuState {
         open: true,
         selected_role: Role::Ghost,
@@ -317,7 +317,7 @@ fn room_count_selection_changes_only_on_ghost_detail_screen() {
     app.insert_resource(RoleState {
         current: Role::Ghost,
     });
-    app.insert_resource(client::core::RoleYaw {
+    app.insert_resource(crate::core::RoleYaw {
         ghost: 0.0,
         investigator: 0.0,
     });
@@ -366,7 +366,7 @@ fn room_count_selection_changes_only_on_ghost_detail_screen() {
 fn begin_haunt_applies_selected_room_count_layout() {
     let mut app = App::new();
     app.add_event::<AppExit>();
-    app.add_systems(Update, client::ui::lobby::handle_menu_interactions);
+    app.add_systems(Update, crate::ui::lobby::handle_menu_interactions);
     app.insert_resource(MenuState {
         open: true,
         selected_role: Role::Ghost,
@@ -377,7 +377,7 @@ fn begin_haunt_applies_selected_room_count_layout() {
     app.insert_resource(RoleState {
         current: Role::Ghost,
     });
-    app.insert_resource(client::core::RoleYaw {
+    app.insert_resource(crate::core::RoleYaw {
         ghost: 0.0,
         investigator: 0.0,
     });
@@ -400,7 +400,7 @@ fn begin_haunt_applies_selected_room_count_layout() {
     app.world_mut().spawn((
         Transform::from_xyz(0.0, 0.9, 0.0),
         GlobalTransform::default(),
-        client::gameplay::investigator::Player,
+        crate::gameplay::investigator::Player,
     ));
 
     let room_button = app
@@ -431,24 +431,28 @@ fn begin_haunt_applies_selected_room_count_layout() {
 
     let layout = app.world().resource::<HouseLayout>();
     assert_eq!(layout.rooms.len(), 3);
-    assert!(layout
-        .obstacles
-        .iter()
-        .any(|o| o.min_z <= -2.0 && o.max_z >= -2.0 && o.min_x <= -9.4 && o.max_x >= 1.8));
+    assert!(layout.obstacles.iter().any(|o| {
+        o.min_x == -9.4 && o.max_x == -1.8 && o.min_z == -2.2 && o.max_z == -1.8
+    }));
+    assert!(layout.obstacles.iter().any(|o| {
+        o.min_x == 0.2 && o.max_x == 1.8 && o.min_z == -2.2 && o.max_z == -1.8
+    }));
 
     let collision = app.world().resource::<CollisionWorld>();
     assert_eq!(collision.obstacles.len(), layout.obstacles.len());
-    assert!(collision
-        .obstacles
-        .iter()
-        .any(|o| o.min_x == 1.8 && o.max_x == 2.2 && o.min_z == -9.4 && o.max_z == 9.4));
+    assert!(collision.obstacles.iter().any(|o| {
+        o.min_x == 1.8 && o.max_x == 2.2 && o.min_z == -9.4 && o.max_z == -1.2
+    }));
+    assert!(collision.obstacles.iter().any(|o| {
+        o.min_x == 1.8 && o.max_x == 2.2 && o.min_z == 1.2 && o.max_z == 9.4
+    }));
 }
 
 #[test]
 fn begin_investigation_applies_selected_room_count_layout() {
     let mut app = App::new();
     app.add_event::<AppExit>();
-    app.add_systems(Update, client::ui::lobby::handle_menu_interactions);
+    app.add_systems(Update, crate::ui::lobby::handle_menu_interactions);
     app.insert_resource(MenuState {
         open: true,
         selected_role: Role::Ghost,
@@ -459,7 +463,7 @@ fn begin_investigation_applies_selected_room_count_layout() {
     app.insert_resource(RoleState {
         current: Role::Ghost,
     });
-    app.insert_resource(client::core::RoleYaw {
+    app.insert_resource(crate::core::RoleYaw {
         ghost: 0.0,
         investigator: 0.0,
     });
@@ -482,7 +486,7 @@ fn begin_investigation_applies_selected_room_count_layout() {
     app.world_mut().spawn((
         Transform::from_xyz(0.0, 0.9, 0.0),
         GlobalTransform::default(),
-        client::gameplay::investigator::Player,
+        crate::gameplay::investigator::Player,
     ));
 
     let room_button = app
@@ -520,7 +524,7 @@ fn begin_investigation_applies_selected_room_count_layout() {
 fn begin_investigation_resets_player_and_ghost_spawns() {
     let mut app = App::new();
     app.add_event::<AppExit>();
-    app.add_systems(Update, client::ui::lobby::handle_menu_interactions);
+    app.add_systems(Update, crate::ui::lobby::handle_menu_interactions);
     app.insert_resource(MenuState {
         open: true,
         selected_role: Role::Ghost,
@@ -531,7 +535,7 @@ fn begin_investigation_resets_player_and_ghost_spawns() {
     app.insert_resource(RoleState {
         current: Role::Ghost,
     });
-    app.insert_resource(client::core::RoleYaw {
+    app.insert_resource(crate::core::RoleYaw {
         ghost: 0.0,
         investigator: 0.0,
     });
@@ -554,7 +558,7 @@ fn begin_investigation_resets_player_and_ghost_spawns() {
         .spawn((
             Transform::from_xyz(8.0, 0.9, 8.0),
             GlobalTransform::default(),
-            client::gameplay::investigator::Player,
+            crate::gameplay::investigator::Player,
         ))
         .id();
 
@@ -573,11 +577,11 @@ fn begin_investigation_resets_player_and_ghost_spawns() {
     let player_transform = app.world().entity(player).get::<Transform>().unwrap();
     assert_eq!(
         player_transform.translation,
-        client::gameplay::map::systems::investigator_spawn_position()
+        crate::gameplay::map::systems::investigator_spawn_position()
     );
 
     let ghost = app.world().resource::<GhostState>();
-    let allowed = client::gameplay::map::systems::ghost_spawn_positions();
+    let allowed = crate::gameplay::map::systems::ghost_spawn_positions();
     assert!(allowed.contains(&ghost.position));
 
     let role = app.world().resource::<RoleState>();
@@ -593,7 +597,7 @@ fn begin_investigation_resets_player_and_ghost_spawns() {
 fn begin_investigation_uses_house_layout_spawn_metadata_when_present() {
     let mut app = App::new();
     app.add_event::<AppExit>();
-    app.add_systems(Update, client::ui::lobby::handle_menu_interactions);
+    app.add_systems(Update, crate::ui::lobby::handle_menu_interactions);
     app.insert_resource(MenuState {
         open: true,
         selected_role: Role::Ghost,
@@ -604,7 +608,7 @@ fn begin_investigation_uses_house_layout_spawn_metadata_when_present() {
     app.insert_resource(RoleState {
         current: Role::Ghost,
     });
-    app.insert_resource(client::core::RoleYaw {
+    app.insert_resource(crate::core::RoleYaw {
         ghost: 0.0,
         investigator: 0.0,
     });
@@ -652,7 +656,7 @@ fn begin_investigation_uses_house_layout_spawn_metadata_when_present() {
             },
         ],
         walls: Vec::new(),
-        exorcism: client::gameplay::map::components::ExorcismLayout {
+        exorcism: crate::gameplay::map::components::ExorcismLayout {
             spirit_anchors: vec![Vec3::new(-8.0, 0.7, -4.0)],
             banshee_anchors: vec![Vec3::new(8.0, 0.5, 0.0), Vec3::new(9.0, 0.5, 0.0)],
             onryo_cursed_positions: vec![Vec3::new(-8.0, 0.4, 0.0)],
@@ -667,7 +671,7 @@ fn begin_investigation_uses_house_layout_spawn_metadata_when_present() {
         .spawn((
             Transform::from_xyz(1.0, 0.9, 1.0),
             GlobalTransform::default(),
-            client::gameplay::investigator::Player,
+            crate::gameplay::investigator::Player,
         ))
         .id();
 
@@ -691,7 +695,7 @@ fn begin_investigation_uses_house_layout_spawn_metadata_when_present() {
 #[test]
 fn escape_returns_to_role_select_from_details() {
     let mut app = App::new();
-    app.add_systems(Update, client::ui::lobby::handle_menu_toggle);
+    app.add_systems(Update, crate::ui::lobby::handle_menu_toggle);
     app.insert_resource(MenuState {
         open: true,
         selected_role: Role::Ghost,
@@ -718,7 +722,7 @@ fn escape_returns_to_role_select_from_details() {
 #[test]
 fn cursor_unlocks_when_journal_open() {
     let mut app = App::new();
-    app.add_systems(Update, client::ui::lobby::update_cursor_lock);
+    app.add_systems(Update, crate::ui::lobby::update_cursor_lock);
     app.insert_resource(MenuState {
         open: false,
         selected_role: Role::Investigator,
@@ -784,7 +788,7 @@ fn emf_updates_even_when_spiritbox_active() {
     app.world_mut().spawn((
         Transform::from_xyz(0.0, 0.0, 0.5),
         GlobalTransform::default(),
-        client::gameplay::investigator::Player,
+        crate::gameplay::investigator::Player,
     ));
     app.world_mut().spawn(Camera3dBundle::default());
 
@@ -880,7 +884,7 @@ fn spirit_markers_use_house_layout_anchor_positions() {
             },
         }],
         walls: Vec::new(),
-        exorcism: client::gameplay::map::components::ExorcismLayout {
+        exorcism: crate::gameplay::map::components::ExorcismLayout {
             spirit_anchors: vec![Vec3::new(-7.0, 0.7, -3.0), Vec3::new(7.0, 0.7, 3.0)],
             banshee_anchors: vec![Vec3::new(0.0, 0.5, 0.0)],
             onryo_cursed_positions: vec![Vec3::new(-3.0, 0.4, 0.0)],

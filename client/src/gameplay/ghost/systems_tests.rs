@@ -1,9 +1,9 @@
 use bevy::prelude::*;
 
-use client::core::{CameraControl, MenuState, Role, RoleState};
-use client::gameplay::ghost::systems::ghost_movement_system;
-use client::gameplay::ghost::GhostState;
-use client::gameplay::map::components::{Bounds, CollisionWorld, Obstacle};
+use crate::core::{CameraControl, MenuState, Role, RoleState};
+use crate::gameplay::ghost::systems::ghost_movement_system;
+use crate::gameplay::ghost::GhostState;
+use crate::gameplay::map::components::{Bounds, CollisionWorld, Obstacle};
 
 fn test_world_with_divider() -> CollisionWorld {
     CollisionWorld {

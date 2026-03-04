@@ -1,9 +1,9 @@
 use bevy::prelude::*;
 
-use client::core::{CameraControl, JournalState, MenuState, Role, RoleState};
-use client::gameplay::investigator::systems::investigator_movement_system;
-use client::gameplay::investigator::Player;
-use client::gameplay::map::components::{Bounds, CollisionWorld};
+use crate::core::{CameraControl, JournalState, MenuState, Role, RoleState};
+use crate::gameplay::investigator::systems::investigator_movement_system;
+use crate::gameplay::investigator::Player;
+use crate::gameplay::map::components::{Bounds, CollisionWorld};
 
 #[test]
 fn investigator_faces_forward_with_pi_offset() {

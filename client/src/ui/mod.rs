@@ -3,6 +3,9 @@ use crate::prelude::*;
 pub mod hud;
 pub mod lobby;
 
+#[cfg(test)]
+mod ui_flow_tests;
+
 #[derive(Component)]
 pub struct StartScreenRoot;
 

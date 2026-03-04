@@ -111,3 +111,7 @@ impl SpiritboxReply {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "evidence_tests.rs"]
+mod evidence_tests;

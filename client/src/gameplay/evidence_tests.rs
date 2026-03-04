@@ -1,5 +1,5 @@
-use client::core::GhostType;
-use client::gameplay::evidence::{
+use crate::core::GhostType;
+use crate::gameplay::evidence::{
     emf_five_candidate, emf_level, overlap_distance, spiritbox_is_evidence, spiritbox_reply,
     EvidenceTuning, SpiritboxReply,
 };

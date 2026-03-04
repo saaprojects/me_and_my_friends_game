@@ -46,3 +46,7 @@ pub fn onryo_stack_tick(
     let new_stacks = stacks + dt * stack_rate;
     (new_stacks, new_stacks >= max_stacks)
 }
+
+#[cfg(test)]
+#[path = "rules_tests.rs"]
+mod rules_tests;

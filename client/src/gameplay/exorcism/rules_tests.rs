@@ -1,6 +1,6 @@
-use client::gameplay::exorcism::rules::{banshee_advance, onryo_stack_tick, spirit_progress};
-use client::gameplay::exorcism::tables::ExorcismTables;
-use client::gameplay::exorcism::ExorcismState;
+use crate::gameplay::exorcism::rules::{banshee_advance, onryo_stack_tick, spirit_progress};
+use crate::gameplay::exorcism::tables::ExorcismTables;
+use crate::gameplay::exorcism::ExorcismState;
 
 #[test]
 fn spirit_progress_increases_when_watched() {

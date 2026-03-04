@@ -75,3 +75,7 @@ pub fn sync_ghost_marker(
     };
     marker.translation = Vec3::new(ghost.position.x, 1.2, ghost.position.z);
 }
+
+#[cfg(test)]
+#[path = "systems_tests.rs"]
+mod systems_tests;

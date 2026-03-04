@@ -5,6 +5,9 @@ pub mod systems;
 
 pub use components::{HouseLayout, HouseLayoutKind, HouseLayoutSelection};
 
+#[cfg(test)]
+mod map_tests;
+
 pub struct MapPlugin;
 
 impl Plugin for MapPlugin {

@@ -1,11 +1,11 @@
 use bevy::prelude::Vec3;
-use client::gameplay::map::HouseLayout;
-use client::gameplay::map::components::HouseLayoutSelection;
-use client::gameplay::map::systems::{
+use crate::gameplay::map::HouseLayout;
+use crate::gameplay::map::components::HouseLayoutSelection;
+use crate::gameplay::map::systems::{
     avoid_camera_obstacles, collides, ghost_spawn_positions, investigator_spawn_position,
     random_ghost_spawn_position, room_id, room_id_in_house, shortest_angle,
 };
-use client::gameplay::map::components::Obstacle;
+use crate::gameplay::map::components::Obstacle;
 
 #[test]
 fn room_id_quadrants() {
@@ -133,8 +133,8 @@ fn three_room_layout_adds_a_third_room_with_intentional_doorways() {
 #[test]
 fn house_layout_selection_defaults_to_two_room() {
     let selection = HouseLayoutSelection::default();
-    assert_eq!(selection.selected_kind, client::gameplay::map::HouseLayoutKind::TwoRoom);
-    assert_eq!(selection.active_kind, client::gameplay::map::HouseLayoutKind::TwoRoom);
+    assert_eq!(selection.selected_kind, crate::gameplay::map::HouseLayoutKind::TwoRoom);
+    assert_eq!(selection.active_kind, crate::gameplay::map::HouseLayoutKind::TwoRoom);
 }
 
 #[test]
