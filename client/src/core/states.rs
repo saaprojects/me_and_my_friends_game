@@ -36,6 +36,7 @@ pub enum MenuScreen {
     RoleSelect,
     GhostDetails,
     InvestigatorDetails,
+    Resolution,
 }
 
 #[derive(Resource)]
@@ -69,6 +70,19 @@ pub struct GhostTypeState {
 #[derive(Resource)]
 pub struct SessionState {
     pub started: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RoundOutcome {
+    SuccessfulExorcism,
+    WrongGhost,
+    FailedExorcism,
+}
+
+#[derive(Resource, Default)]
+pub struct ResolutionState {
+    pub outcome: Option<RoundOutcome>,
+    pub shown: bool,
 }
 
 pub const DEFAULT_GHOST_YAW: f32 = 0.0;

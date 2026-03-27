@@ -1,10 +1,12 @@
 use crate::prelude::*;
 
-use crate::core::health::{spawn_health_thread, HealthChannel, HealthState, update_health, update_window_title};
+use crate::core::health::{
+    spawn_health_thread, update_health, update_window_title, HealthChannel, HealthState,
+};
 use crate::gameplay::{
     evidence::EvidenceTuning,
     ghost::GhostState,
-    investigator::tools::{EvidenceState, EquipmentState},
+    investigator::tools::{EquipmentState, EvidenceState},
     map::{HouseLayout, HouseLayoutSelection},
     GameplayPlugin,
 };
@@ -52,6 +54,7 @@ pub fn run() {
             active: GhostType::Spirit,
         })
         .insert_resource(crate::core::SessionState { started: false })
+        .insert_resource(crate::core::ResolutionState::default())
         .insert_resource(EvidenceState::default())
         .insert_resource(EvidenceTuning::default())
         .insert_resource(HealthState {
