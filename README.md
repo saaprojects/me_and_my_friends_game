@@ -44,9 +44,6 @@ Tools (investigator)
 Ghost
 - `L` toggle room lights
 
-Debug
-- `F3` toggle debug overlay
-
 ## Testing
 ```powershell
 cargo test -p shared
