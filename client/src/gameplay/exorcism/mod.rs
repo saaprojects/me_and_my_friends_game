@@ -412,8 +412,10 @@ fn update_spirit_puzzle(
     let max_distance = tables.spirit.watch_distance;
     let grace_seconds = tables.spirit.grace_seconds;
 
-    let mut all_watched = true;
+    let mut recent_count = 0u8;
+    let mut total_count = 0u8;
     for (mut anchor, transform) in anchors.iter_mut() {
+        total_count = total_count.saturating_add(1);
         let to_anchor = transform.translation - cam_pos;
         let distance = to_anchor.length();
         let dir = to_anchor.normalize_or_zero();
@@ -425,22 +427,29 @@ fn update_spirit_puzzle(
         } else {
             anchor.last_seen += time.delta_seconds();
         }
-        if anchor.last_seen > grace_seconds {
-            all_watched = false;
+        if anchor.last_seen <= grace_seconds {
+            recent_count = recent_count.saturating_add(1);
         }
     }
 
+    let required_count = total_count.clamp(1, 2);
+    let target_progress = if required_count == 0 {
+        0.0
+    } else {
+        (recent_count as f32 / required_count as f32).clamp(0.0, 1.0)
+    };
+
     spirit.progress = rules::spirit_progress(
         spirit.progress,
-        all_watched,
+        target_progress,
         time.delta_seconds(),
         tables.spirit.rate_up,
         tables.spirit.rate_down,
     );
     status.progress = spirit.progress;
-    status.stage = 0;
+    status.stage = recent_count;
     status.stacks = 0.0;
-    status.max_stacks = 0.0;
+    status.max_stacks = required_count as f32;
     if spirit.progress >= 1.0 {
         if ghost_type.active == GhostType::Spirit {
             status.state = ExorcismState::Complete;

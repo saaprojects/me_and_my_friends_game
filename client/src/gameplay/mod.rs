@@ -7,7 +7,6 @@ pub mod investigator;
 pub mod map;
 pub mod evidence;
 pub mod exorcism;
-pub mod debug;
 
 pub struct GameplayPlugin;
 
@@ -20,17 +19,7 @@ impl Plugin for GameplayPlugin {
             exorcism::ExorcismPlugin,
         ))
             .init_resource::<evidence::EvidenceTuning>()
-            .insert_resource(debug::DebugOverlayState { enabled: true })
-            .add_systems(Startup, debug::spawn_debug_overlay)
-            .add_systems(
-                Update,
-                (
-                    handle_role_toggle,
-                    update_mouse_look,
-                    debug::toggle_debug_overlay,
-                    debug::sync_debug_overlay,
-                ),
-            );
+            .add_systems(Update, (handle_role_toggle, update_mouse_look));
     }
 }
 
