@@ -1,21 +1,22 @@
 use crate::prelude::*;
 
 use crate::core::{
-    GhostTypeState, JournalState, MenuFlowState, MenuScreen, MenuState, Role, RoleState, RoleYaw,
-    SessionState,
+    GhostTypeState, JournalState, MenuFlowState, MenuScreen, MenuState, ResolutionState, Role,
+    RoleState, RoleYaw, RoundOutcome, SessionState,
 };
-use crate::gameplay::exorcism::{InvestigationState, PuzzleSpawned};
+use crate::gameplay::exorcism::{ExorcismState, ExorcismStatus, InvestigationState, PuzzleSpawned};
 use crate::gameplay::ghost::GhostState;
+use crate::gameplay::investigator::tools::EvidenceState;
 use crate::gameplay::investigator::Player;
-use crate::gameplay::map::{HouseLayout, HouseLayoutKind, HouseLayoutSelection};
 use crate::gameplay::map::components::CollisionWorld;
 use crate::gameplay::map::systems::{investigator_spawn_position, random_ghost_spawn_position};
-use crate::gameplay::investigator::tools::EvidenceState;
+use crate::gameplay::map::{HouseLayout, HouseLayoutKind, HouseLayoutSelection};
 use crate::ui::{
-    BeginHauntButton, BeginInvestigationButton, ExitButton, GhostDetailRoot, GhostSelectButton,
-    InvestigatorDetailRoot, InvestigatorSelectButton, OnryoGhostButton, RoleSelectRoot,
-    SpiritGhostButton, StartScreenButton, StartScreenRoot, ThreeRoomCountButton, TwoRoomCountButton,
-    BansheeGhostButton,
+    BansheeGhostButton, BeginHauntButton, BeginInvestigationButton, ExitButton, GhostDetailRoot,
+    GhostSelectButton, InvestigatorDetailRoot, InvestigatorSelectButton, OnryoGhostButton,
+    ResolutionBodyText, ResolutionContinueButton, ResolutionRoot, ResolutionTitleText,
+    RoleSelectRoot, SpiritGhostButton, StartScreenButton, StartScreenRoot, ThreeRoomCountButton,
+    TwoRoomCountButton,
 };
 
 pub fn setup_menu(mut commands: Commands) {
@@ -125,77 +126,75 @@ pub fn setup_menu(mut commands: Commands) {
                     ..default()
                 })
                 .with_children(|row| {
-                    row
-                        .spawn((
-                            ButtonBundle {
-                                style: Style {
-                                    width: Val::Percent(50.0),
-                                    height: Val::Percent(100.0),
-                                    padding: UiRect::all(Val::Px(24.0)),
-                                    flex_direction: FlexDirection::Column,
-                                    row_gap: Val::Px(12.0),
-                                    justify_content: JustifyContent::Center,
-                                    ..default()
-                                },
-                                background_color: ghost_panel,
+                    row.spawn((
+                        ButtonBundle {
+                            style: Style {
+                                width: Val::Percent(50.0),
+                                height: Val::Percent(100.0),
+                                padding: UiRect::all(Val::Px(24.0)),
+                                flex_direction: FlexDirection::Column,
+                                row_gap: Val::Px(12.0),
+                                justify_content: JustifyContent::Center,
                                 ..default()
                             },
-                            GhostSelectButton,
-                        ))
-                        .with_children(|column| {
-                            column.spawn(TextBundle::from_section(
-                                "Ghost",
-                                TextStyle {
-                                    font_size: 28.0,
-                                    color: Color::WHITE,
-                                    ..default()
-                                },
-                            ));
-                            column.spawn(TextBundle::from_section(
-                                "Haunt the house and mislead the investigators.",
-                                TextStyle {
-                                    font_size: 14.0,
-                                    color: Color::srgb(0.7, 0.75, 0.9),
-                                    ..default()
-                                },
-                            ));
-                        });
+                            background_color: ghost_panel,
+                            ..default()
+                        },
+                        GhostSelectButton,
+                    ))
+                    .with_children(|column| {
+                        column.spawn(TextBundle::from_section(
+                            "Ghost",
+                            TextStyle {
+                                font_size: 28.0,
+                                color: Color::WHITE,
+                                ..default()
+                            },
+                        ));
+                        column.spawn(TextBundle::from_section(
+                            "Haunt the house and mislead the investigators.",
+                            TextStyle {
+                                font_size: 14.0,
+                                color: Color::srgb(0.7, 0.75, 0.9),
+                                ..default()
+                            },
+                        ));
+                    });
 
-                    row
-                        .spawn((
-                            ButtonBundle {
-                                style: Style {
-                                    width: Val::Percent(50.0),
-                                    height: Val::Percent(100.0),
-                                    padding: UiRect::all(Val::Px(24.0)),
-                                    flex_direction: FlexDirection::Column,
-                                    row_gap: Val::Px(12.0),
-                                    justify_content: JustifyContent::Center,
-                                    ..default()
-                                },
-                                background_color: investigator_panel,
+                    row.spawn((
+                        ButtonBundle {
+                            style: Style {
+                                width: Val::Percent(50.0),
+                                height: Val::Percent(100.0),
+                                padding: UiRect::all(Val::Px(24.0)),
+                                flex_direction: FlexDirection::Column,
+                                row_gap: Val::Px(12.0),
+                                justify_content: JustifyContent::Center,
                                 ..default()
                             },
-                            InvestigatorSelectButton,
-                        ))
-                        .with_children(|column| {
-                            column.spawn(TextBundle::from_section(
-                                "Investigator",
-                                TextStyle {
-                                    font_size: 28.0,
-                                    color: Color::WHITE,
-                                    ..default()
-                                },
-                            ));
-                            column.spawn(TextBundle::from_section(
-                                "Gather evidence and exorcise the ghost.",
-                                TextStyle {
-                                    font_size: 14.0,
-                                    color: Color::srgb(0.7, 0.75, 0.9),
-                                    ..default()
-                                },
-                            ));
-                        });
+                            background_color: investigator_panel,
+                            ..default()
+                        },
+                        InvestigatorSelectButton,
+                    ))
+                    .with_children(|column| {
+                        column.spawn(TextBundle::from_section(
+                            "Investigator",
+                            TextStyle {
+                                font_size: 28.0,
+                                color: Color::WHITE,
+                                ..default()
+                            },
+                        ));
+                        column.spawn(TextBundle::from_section(
+                            "Gather evidence and exorcise the ghost.",
+                            TextStyle {
+                                font_size: 14.0,
+                                color: Color::srgb(0.7, 0.75, 0.9),
+                                ..default()
+                            },
+                        ));
+                    });
                 });
 
             parent
@@ -465,6 +464,80 @@ pub fn setup_menu(mut commands: Commands) {
                     ));
                 });
         });
+
+    commands
+        .spawn((
+            NodeBundle {
+                style: Style {
+                    width: Val::Percent(100.0),
+                    height: Val::Percent(100.0),
+                    flex_direction: FlexDirection::Column,
+                    align_items: AlignItems::Center,
+                    justify_content: JustifyContent::Center,
+                    row_gap: Val::Px(18.0),
+                    padding: UiRect::axes(Val::Px(32.0), Val::Px(24.0)),
+                    ..default()
+                },
+                background_color: panel,
+                ..default()
+            },
+            ResolutionRoot,
+        ))
+        .with_children(|parent| {
+            parent.spawn((
+                TextBundle::from_section(
+                    "Case Closed",
+                    TextStyle {
+                        font_size: 36.0,
+                        color: Color::srgb(0.88, 0.92, 1.0),
+                        ..default()
+                    },
+                ),
+                ResolutionTitleText,
+            ));
+            parent.spawn((
+                TextBundle {
+                    text: Text::from_section(
+                        "Return to the role select when you're ready.",
+                        TextStyle {
+                            font_size: 18.0,
+                            color: Color::srgb(0.72, 0.78, 0.92),
+                            ..default()
+                        },
+                    )
+                    .with_justify(JustifyText::Center),
+                    style: Style {
+                        max_width: Val::Px(640.0),
+                        ..default()
+                    },
+                    ..default()
+                },
+                ResolutionBodyText,
+            ));
+            parent
+                .spawn((
+                    ButtonBundle {
+                        style: Style {
+                            padding: UiRect::axes(Val::Px(24.0), Val::Px(12.0)),
+                            margin: UiRect::top(Val::Px(10.0)),
+                            ..default()
+                        },
+                        background_color: primary_button,
+                        ..default()
+                    },
+                    ResolutionContinueButton,
+                ))
+                .with_children(|button| {
+                    button.spawn(TextBundle::from_section(
+                        "Back To Roles",
+                        TextStyle {
+                            font_size: 18.0,
+                            color: Color::WHITE,
+                            ..default()
+                        },
+                    ));
+                });
+        });
 }
 
 pub fn handle_menu_toggle(
@@ -478,7 +551,7 @@ pub fn handle_menu_toggle(
         if menu.open
             && matches!(
                 flow.screen,
-                MenuScreen::GhostDetails | MenuScreen::InvestigatorDetails
+                MenuScreen::GhostDetails | MenuScreen::InvestigatorDetails | MenuScreen::Resolution
             )
         {
             flow.screen = MenuScreen::RoleSelect;
@@ -518,10 +591,13 @@ pub fn handle_menu_interactions(
     mut role: ResMut<RoleState>,
     mut role_yaw: ResMut<RoleYaw>,
     mut ghost_type: ResMut<GhostTypeState>,
-    mut evidence: ResMut<EvidenceState>,
-    mut puzzle_spawned: ResMut<PuzzleSpawned>,
-    mut investigation: ResMut<InvestigationState>,
-    mut session: ResMut<SessionState>,
+    round_resources: (
+        ResMut<EvidenceState>,
+        ResMut<PuzzleSpawned>,
+        ResMut<InvestigationState>,
+        ResMut<ResolutionState>,
+        ResMut<SessionState>,
+    ),
     mut control: ResMut<crate::core::CameraControl>,
     mut journal: ResMut<JournalState>,
     mut ghost: Option<ResMut<GhostState>>,
@@ -533,6 +609,8 @@ pub fn handle_menu_interactions(
     mut players: Query<&mut Transform, With<Player>>,
     mut exit_events: EventWriter<AppExit>,
 ) {
+    let (mut evidence, mut puzzle_spawned, mut investigation, mut resolution, mut session) =
+        round_resources;
     let (mut active_house_layout, mut collision_world, mut house_selection) = layout_resources;
 
     for (
@@ -611,6 +689,7 @@ pub fn handle_menu_interactions(
                 puzzle_spawned.0 = false;
                 investigation.guess = None;
                 investigation.confirmed = false;
+                *resolution = ResolutionState::default();
                 session.started = true;
                 set_default_camera(role.current, &mut control, &mut role_yaw);
                 let investigator_spawn = active_house_layout
@@ -640,6 +719,59 @@ pub fn handle_menu_interactions(
             *color = BackgroundColor(Color::srgba(0.3, 0.35, 0.55, 0.95));
         }
     }
+}
+
+pub fn handle_resolution_interactions(
+    mut interactions: Query<
+        &Interaction,
+        (
+            Changed<Interaction>,
+            With<Button>,
+            With<ResolutionContinueButton>,
+        ),
+    >,
+    mut flow: ResMut<MenuFlowState>,
+) {
+    for interaction in interactions.iter_mut() {
+        if *interaction == Interaction::Pressed {
+            flow.screen = MenuScreen::RoleSelect;
+        }
+    }
+}
+
+pub fn maybe_open_resolution_screen(
+    session: Res<SessionState>,
+    exorcism: Res<ExorcismStatus>,
+    investigation: Res<InvestigationState>,
+    ghost_type: Res<GhostTypeState>,
+    mut resolution: ResMut<ResolutionState>,
+    mut menu: ResMut<MenuState>,
+    mut journal: ResMut<JournalState>,
+    mut flow: ResMut<MenuFlowState>,
+) {
+    if !session.started || resolution.shown || !investigation.confirmed {
+        return;
+    }
+
+    let outcome = match exorcism.state {
+        ExorcismState::Complete => Some(RoundOutcome::SuccessfulExorcism),
+        ExorcismState::Failed => Some(if investigation.guess == Some(ghost_type.active) {
+            RoundOutcome::FailedExorcism
+        } else {
+            RoundOutcome::WrongGhost
+        }),
+        _ => None,
+    };
+
+    let Some(outcome) = outcome else {
+        return;
+    };
+
+    resolution.outcome = Some(outcome);
+    resolution.shown = true;
+    menu.open = true;
+    journal.open = false;
+    flow.screen = MenuScreen::Resolution;
 }
 
 pub fn sync_start_screen_visibility(
@@ -692,6 +824,63 @@ pub fn sync_investigator_detail_visibility(
     } else {
         Visibility::Hidden
     };
+}
+
+pub fn sync_resolution_visibility(
+    menu: Res<MenuState>,
+    flow: Res<MenuFlowState>,
+    mut root: Query<&mut Visibility, With<ResolutionRoot>>,
+) {
+    let mut visibility = root.single_mut();
+    *visibility = if menu.open && flow.screen == MenuScreen::Resolution {
+        Visibility::Visible
+    } else {
+        Visibility::Hidden
+    };
+}
+
+pub fn sync_resolution_text(
+    resolution: Res<ResolutionState>,
+    investigation: Res<InvestigationState>,
+    ghost_type: Res<GhostTypeState>,
+    mut texts: Query<(
+        &mut Text,
+        Option<&ResolutionTitleText>,
+        Option<&ResolutionBodyText>,
+    )>,
+) {
+    let guess_name = investigation
+        .guess
+        .map(ghost_type_name)
+        .unwrap_or("Unknown");
+    let actual_name = ghost_type_name(ghost_type.active);
+
+    for (mut text, title_tag, body_tag) in texts.iter_mut() {
+        if title_tag.is_some() {
+            text.sections[0].value = match resolution.outcome {
+                Some(RoundOutcome::SuccessfulExorcism) => "Ghost Banished".to_string(),
+                Some(RoundOutcome::WrongGhost) => "Wrong Ghost".to_string(),
+                Some(RoundOutcome::FailedExorcism) => "Exorcism Failed".to_string(),
+                None => "Case Closed".to_string(),
+            };
+        } else if body_tag.is_some() {
+            text.sections[0].value = match resolution.outcome {
+                Some(RoundOutcome::SuccessfulExorcism) => format!(
+                    "You identified the {} and finished the ritual. Head back to role select when you're ready for the next case.",
+                    actual_name
+                ),
+                Some(RoundOutcome::WrongGhost) => format!(
+                    "You confirmed {}, but the ghost was {}. Gather more evidence before locking in the next ritual.",
+                    guess_name, actual_name
+                ),
+                Some(RoundOutcome::FailedExorcism) => format!(
+                    "You had the right ghost, but the {} ritual broke down before completion. Reopen the case and try it again.",
+                    actual_name
+                ),
+                None => "Return to the role select when you're ready.".to_string(),
+            };
+        }
+    }
 }
 
 pub fn sync_menu_styles(
@@ -821,5 +1010,13 @@ pub fn update_cursor_lock(
     } else {
         window.cursor.grab_mode = CursorGrabMode::Locked;
         window.cursor.visible = false;
+    }
+}
+
+fn ghost_type_name(ghost_type: GhostType) -> &'static str {
+    match ghost_type {
+        GhostType::Spirit => "Spirit",
+        GhostType::Banshee => "Banshee",
+        GhostType::Onryo => "Onryo",
     }
 }

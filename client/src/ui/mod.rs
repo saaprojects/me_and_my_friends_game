@@ -19,7 +19,16 @@ pub struct GhostDetailRoot;
 pub struct InvestigatorDetailRoot;
 
 #[derive(Component)]
+pub struct ResolutionRoot;
+
+#[derive(Component)]
 pub struct HudRoot;
+
+#[derive(Component)]
+pub struct ObjectiveTitleText;
+
+#[derive(Component)]
+pub struct ObjectiveBodyText;
 
 #[derive(Component)]
 pub struct ToolText;
@@ -73,6 +82,12 @@ pub struct JournalConfirmButton;
 pub struct JournalConfirmText;
 
 #[derive(Component)]
+pub struct ResolutionTitleText;
+
+#[derive(Component)]
+pub struct ResolutionBodyText;
+
+#[derive(Component)]
 pub struct ExitButton;
 
 #[derive(Component)]
@@ -105,6 +120,9 @@ pub struct TwoRoomCountButton;
 #[derive(Component)]
 pub struct ThreeRoomCountButton;
 
+#[derive(Component)]
+pub struct ResolutionContinueButton;
+
 pub struct UiPlugin;
 
 impl Plugin for UiPlugin {
@@ -115,10 +133,19 @@ impl Plugin for UiPlugin {
                 (
                     lobby::handle_menu_toggle,
                     lobby::handle_menu_interactions,
+                    lobby::handle_resolution_interactions,
+                    lobby::maybe_open_resolution_screen,
                     lobby::sync_start_screen_visibility,
                     lobby::sync_role_select_visibility,
                     lobby::sync_ghost_detail_visibility,
                     lobby::sync_investigator_detail_visibility,
+                    lobby::sync_resolution_visibility,
+                    lobby::sync_resolution_text,
+                ),
+            )
+            .add_systems(
+                Update,
+                (
                     lobby::sync_menu_styles,
                     lobby::sync_role_select_hover,
                     lobby::update_cursor_lock,

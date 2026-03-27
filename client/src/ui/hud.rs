@@ -1,14 +1,15 @@
 use crate::prelude::*;
 
-use crate::core::{JournalState, MenuState, RoleState};
-use crate::gameplay::investigator::tools::{EvidenceState, EquipmentState};
-use crate::gameplay::exorcism::{ExorcismState, ExorcismStatus, InvestigationState};
+use crate::core::{JournalState, MenuState, RoleState, SessionState};
 use crate::gameplay::exorcism::tables::{puzzle_name, ExorcismTables};
+use crate::gameplay::exorcism::{ExorcismState, ExorcismStatus, InvestigationState};
+use crate::gameplay::investigator::tools::{EquipmentState, EvidenceState};
 use crate::ui::{
-    EmfText, HudRoot, JournalEmfText, JournalGuessText, JournalSpiritText, PuzzleDetailText,
-    PuzzleStatusText, PuzzleTitleText, SpiritboxText, ToolText, GhostHudRoot, GhostAbilityText,
-    JournalSelectSpiritButton, JournalSelectBansheeButton, JournalSelectOnryoButton,
-    JournalConfirmButton, JournalConfirmText, JournalSection,
+    EmfText, GhostAbilityText, GhostHudRoot, HudRoot, JournalConfirmButton, JournalConfirmText,
+    JournalEmfText, JournalGuessText, JournalSection, JournalSelectBansheeButton,
+    JournalSelectOnryoButton, JournalSelectSpiritButton, JournalSpiritText, ObjectiveBodyText,
+    ObjectiveTitleText, PuzzleDetailText, PuzzleStatusText, PuzzleTitleText, SpiritboxText,
+    ToolText,
 };
 
 pub fn setup_hud(mut commands: Commands) {
@@ -80,6 +81,37 @@ pub fn setup_hud(mut commands: Commands) {
                     color: Color::srgb(0.65, 0.7, 0.85),
                     ..default()
                 },
+            ));
+
+            parent.spawn(TextBundle::from_section(
+                "OBJECTIVE",
+                TextStyle {
+                    font_size: 14.0,
+                    color: Color::srgb(0.65, 0.7, 1.0),
+                    ..default()
+                },
+            ));
+            parent.spawn((
+                TextBundle::from_section(
+                    "Identify the ghost",
+                    TextStyle {
+                        font_size: 13.0,
+                        color: Color::srgb(0.85, 0.9, 1.0),
+                        ..default()
+                    },
+                ),
+                ObjectiveTitleText,
+            ));
+            parent.spawn((
+                TextBundle::from_section(
+                    "Use EMF and Spiritbox, then open the journal with J to confirm your guess.",
+                    TextStyle {
+                        font_size: 12.0,
+                        color: Color::srgb(0.74, 0.79, 0.92),
+                        ..default()
+                    },
+                ),
+                ObjectiveBodyText,
             ));
 
             parent.spawn((
@@ -417,8 +449,7 @@ pub fn handle_journal_interactions(
         return;
     }
 
-    for (interaction, spirit_btn, banshee_btn, onryo_btn, confirm_btn) in interactions.iter_mut()
-    {
+    for (interaction, spirit_btn, banshee_btn, onryo_btn, confirm_btn) in interactions.iter_mut() {
         if *interaction != Interaction::Pressed {
             continue;
         }
@@ -537,6 +568,7 @@ pub fn sync_journal_visibility(
 
 pub fn sync_hud_text(
     role: Res<RoleState>,
+    session: Res<SessionState>,
     equipment: Res<EquipmentState>,
     evidence: Res<EvidenceState>,
     ghost_type: Res<crate::core::GhostTypeState>,
@@ -552,6 +584,8 @@ pub fn sync_hud_text(
         Option<&JournalEmfText>,
         Option<&JournalSpiritText>,
         Option<&JournalGuessText>,
+        Option<&ObjectiveTitleText>,
+        Option<&ObjectiveBodyText>,
         Option<&PuzzleTitleText>,
         Option<&PuzzleStatusText>,
         Option<&PuzzleDetailText>,
@@ -562,17 +596,16 @@ pub fn sync_hud_text(
         crate::core::Equipment::Spiritbox => "Spiritbox",
     };
 
-    let emf_value = if role.current == Role::Investigator
-        && equipment.active == crate::core::Equipment::Emf
-    {
-        if equipment.emf_level == 0 {
-            "0".to_string()
+    let emf_value =
+        if role.current == Role::Investigator && equipment.active == crate::core::Equipment::Emf {
+            if equipment.emf_level == 0 {
+                "0".to_string()
+            } else {
+                equipment.emf_level.to_string()
+            }
         } else {
-            equipment.emf_level.to_string()
-        }
-    } else {
-        "--".to_string()
-    };
+            "--".to_string()
+        };
 
     let guess = if evidence.emf_five {
         "Spirit"
@@ -580,6 +613,37 @@ pub fn sync_hud_text(
         "Banshee"
     } else {
         "Onryo"
+    };
+
+    let objective_title = if !session.started {
+        "Start a case".to_string()
+    } else if !investigation.confirmed {
+        "Identify the ghost".to_string()
+    } else {
+        format!(
+            "Perform {}",
+            puzzle_name(investigation.guess.unwrap_or(ghost_type.active))
+        )
+    };
+
+    let objective_body = if !session.started {
+        "Open the menu and begin an investigation when you're ready.".to_string()
+    } else if !investigation.confirmed {
+        if evidence.emf_five && evidence.spiritbox_response {
+            "Your evidence is conflicting. Sweep more rooms, then press J to review the journal before you commit.".to_string()
+        } else if evidence.emf_five {
+            "EMF 5 points toward a Spirit. Keep checking if you want more confidence, then press J to confirm your guess.".to_string()
+        } else if evidence.spiritbox_response {
+            "A spiritbox response points toward a Banshee. Press J to confirm when you're ready to start the ritual.".to_string()
+        } else {
+            "Use EMF and Spiritbox while moving room to room. Once you're confident, open the journal with J and confirm a ghost.".to_string()
+        }
+    } else {
+        match investigation.guess.unwrap_or(ghost_type.active) {
+            crate::core::GhostType::Spirit => "No interaction key here. Sweep your view across the blue anchors while their room lights stay on. Keep any two anchors recently witnessed to finish the vigil.".to_string(),
+            crate::core::GhostType::Banshee => "Press F at the violet anchors in order. Keep the rhythm steady: too fast or too slow breaks the sequence.".to_string(),
+            crate::core::GhostType::Onryo => "Use F to carry red cursed objects onto the blue ritual pads in order. Carrying builds stacks, so move decisively.".to_string(),
+        }
     };
 
     let puzzle_label = puzzle_name(investigation.guess.unwrap_or(ghost_type.active));
@@ -597,6 +661,8 @@ pub fn sync_hud_text(
         journal_emf,
         journal_spirit,
         journal_guess,
+        objective_title_tag,
+        objective_body_tag,
         puzzle_title,
         puzzle_status_tag,
         puzzle_detail,
@@ -609,17 +675,23 @@ pub fn sync_hud_text(
         } else if spirit_tag.is_some() {
             text.sections[0].value = format!("Spiritbox: {}", equipment.spiritbox_message);
         } else if journal_emf.is_some() {
-            text.sections[0].value = format!(
-                "EMF 5: {}",
-                if evidence.emf_five { "Yes" } else { "No" }
-            );
+            text.sections[0].value =
+                format!("EMF 5: {}", if evidence.emf_five { "Yes" } else { "No" });
         } else if journal_spirit.is_some() {
             text.sections[0].value = format!(
                 "Spiritbox Response: {}",
-                if evidence.spiritbox_response { "Yes" } else { "No" }
+                if evidence.spiritbox_response {
+                    "Yes"
+                } else {
+                    "No"
+                }
             );
         } else if journal_guess.is_some() {
             text.sections[0].value = format!("Guess: {}", guess);
+        } else if objective_title_tag.is_some() {
+            text.sections[0].value = objective_title.clone();
+        } else if objective_body_tag.is_some() {
+            text.sections[0].value = objective_body.clone();
         } else if puzzle_title.is_some() {
             text.sections[0].value = if awaiting {
                 "Puzzle: Awaiting Confirmation".to_string()
@@ -647,7 +719,17 @@ pub fn sync_hud_text(
             } else {
                 match investigation.guess.unwrap_or(ghost_type.active) {
                     crate::core::GhostType::Spirit => {
-                        format!("Progress: {}%", (exorcism.progress * 100.0).round() as u32)
+                        let anchors_needed = exorcism.max_stacks.max(0.0) as u32;
+                        if anchors_needed > 0 {
+                            format!(
+                                "Progress: {}% | Anchors: {}/{} needed",
+                                (exorcism.progress * 100.0).round() as u32,
+                                exorcism.stage.min(anchors_needed as u8),
+                                anchors_needed
+                            )
+                        } else {
+                            format!("Progress: {}%", (exorcism.progress * 100.0).round() as u32)
+                        }
                     }
                     crate::core::GhostType::Banshee => {
                         if matches!(exorcism.state, ExorcismState::Complete) {
