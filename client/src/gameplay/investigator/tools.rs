@@ -2,8 +2,8 @@ use crate::prelude::*;
 
 use crate::core::{GhostTypeState, JournalState, MenuState, RoleState};
 use crate::gameplay::evidence::{
-    emf_five_candidate, emf_level, overlap_distance, spiritbox_is_evidence, spiritbox_reply,
-    EvidenceTuning,
+    emf_five_candidate, emf_level, overlap_distance, spiritbox_bearing, spiritbox_is_evidence,
+    spiritbox_reply, EvidenceTuning,
 };
 use crate::gameplay::ghost::GhostState;
 use crate::gameplay::investigator::Player;
@@ -79,8 +79,7 @@ pub fn update_emf_reading(
     let facing = facing_ghost(
         player_transform.translation,
         ghost.position,
-        &control,
-        camera.get_single().ok(),
+        view_forward(&control, camera.get_single().ok()),
         tuning.emf_facing_dot,
     );
 
@@ -150,11 +149,14 @@ pub fn handle_spiritbox(
     menu: Res<MenuState>,
     journal: Res<JournalState>,
     ghost: Res<GhostState>,
+    control: Res<CameraControl>,
     tuning: Res<EvidenceTuning>,
     mut equipment: ResMut<EquipmentState>,
     ghost_type: Res<GhostTypeState>,
     mut evidence: ResMut<EvidenceState>,
+    house_layout: Option<Res<HouseLayout>>,
     player: Query<&Transform, With<Player>>,
+    camera: Query<&Transform, With<Camera>>,
 ) {
     if equipment.spiritbox_cooldown > 0.0 {
         equipment.spiritbox_cooldown =
@@ -184,8 +186,21 @@ pub fn handle_spiritbox(
     };
 
     let distance = player_transform.translation.distance(ghost.position);
-    let overlaps = distance <= overlap_distance(&tuning);
-    let reply = spiritbox_reply(ghost_type.active, overlaps);
+    let player_room = house_layout
+        .as_ref()
+        .and_then(|layout| room_id_in_house(layout, player_transform.translation))
+        .unwrap_or_else(|| room_id(player_transform.translation));
+    let ghost_room = house_layout
+        .as_ref()
+        .and_then(|layout| room_id_in_house(layout, ghost.position))
+        .unwrap_or_else(|| room_id(ghost.position));
+    let same_room = player_room == ghost_room;
+    let bearing = spiritbox_bearing(
+        view_forward(&control, camera.get_single().ok()),
+        player_transform.translation,
+        ghost.position,
+    );
+    let reply = spiritbox_reply(ghost_type.active, same_room, distance, &tuning, bearing);
     equipment.spiritbox_message = reply.as_str().to_string();
     let is_evidence = spiritbox_is_evidence(reply);
     if is_evidence {
@@ -201,8 +216,7 @@ pub fn handle_spiritbox(
 fn facing_ghost(
     player_pos: Vec3,
     ghost_pos: Vec3,
-    control: &CameraControl,
-    camera: Option<&Transform>,
+    forward: Vec3,
     facing_dot: f32,
 ) -> bool {
     let to_ghost = ghost_pos - player_pos;
@@ -210,14 +224,17 @@ fn facing_ghost(
     if to_ghost_flat.length_squared() <= f32::EPSILON {
         return true;
     }
+    let forward_flat = Vec3::new(forward.x, 0.0, forward.z).normalize_or_zero();
+    let dir = to_ghost_flat.normalize_or_zero();
+    forward_flat.dot(dir) >= facing_dot
+}
+
+fn view_forward(control: &CameraControl, camera: Option<&Transform>) -> Vec3 {
     if let Some(cam_transform) = camera {
         let forward = cam_transform.forward();
-        let forward_flat = Vec3::new(forward.x, 0.0, forward.z).normalize_or_zero();
-        let dir = to_ghost_flat.normalize_or_zero();
-        return forward_flat.dot(dir) >= facing_dot;
+        return Vec3::new(forward.x, 0.0, forward.z).normalize_or_zero();
     }
+
     let yaw = control.yaw + std::f32::consts::PI;
-    let forward = Vec3::new(yaw.sin(), 0.0, yaw.cos()).normalize_or_zero();
-    let dir = to_ghost_flat.normalize_or_zero();
-    forward.dot(dir) >= facing_dot
+    Vec3::new(yaw.sin(), 0.0, yaw.cos()).normalize_or_zero()
 }

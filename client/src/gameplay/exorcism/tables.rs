@@ -48,9 +48,9 @@ impl Default for ExorcismTables {
     fn default() -> Self {
         Self {
             spirit: SpiritConfig {
-                watch_cos: 0.85,
-                watch_distance: 7.0,
-                grace_seconds: 2.0,
+                watch_cos: 0.75,
+                watch_distance: 9.0,
+                grace_seconds: 4.5,
                 rate_up: 0.16,
                 rate_down: 0.1,
             },

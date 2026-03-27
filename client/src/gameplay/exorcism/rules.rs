@@ -2,15 +2,16 @@ use super::ExorcismState;
 
 pub fn spirit_progress(
     mut progress: f32,
-    all_watched: bool,
+    target_progress: f32,
     dt: f32,
     rate_up: f32,
     rate_down: f32,
 ) -> f32 {
-    if all_watched {
-        progress += rate_up * dt;
-    } else {
-        progress -= rate_down * dt;
+    let target_progress = target_progress.clamp(0.0, 1.0);
+    if progress < target_progress {
+        progress = (progress + rate_up * dt).min(target_progress);
+    } else if progress > target_progress {
+        progress = (progress - rate_down * dt).max(target_progress);
     }
     progress.clamp(0.0, 1.0)
 }

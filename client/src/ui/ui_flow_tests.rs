@@ -1,19 +1,21 @@
 use bevy::prelude::*;
 use bevy::window::{Cursor, PrimaryWindow};
 
-use crate::core::{
-    Equipment, GhostType, GhostTypeState, JournalState, MenuFlowState, MenuScreen, MenuState, Role,
-    RoleState, SessionState,
-};
 use crate::core::CameraControl;
+use crate::core::{
+    Equipment, GhostType, GhostTypeState, JournalState, MenuFlowState, MenuScreen, MenuState,
+    ResolutionState, Role, RoleState, RoundOutcome, SessionState,
+};
 use crate::gameplay::evidence::EvidenceTuning;
 use crate::gameplay::exorcism::{
     ExorcismPlugin, ExorcismStatus, InvestigationState, PuzzleSpawned, SpiritMarker,
 };
 use crate::gameplay::ghost::GhostState;
-use crate::gameplay::investigator::tools::{update_emf_reading, EquipmentState, EvidenceState};
-use crate::gameplay::map::{HouseLayout, HouseLayoutKind, HouseLayoutSelection};
+use crate::gameplay::investigator::tools::{
+    handle_spiritbox, update_emf_reading, EquipmentState, EvidenceState,
+};
 use crate::gameplay::map::components::{Bounds, CollisionWorld, RoomZone};
+use crate::gameplay::map::{HouseLayout, HouseLayoutKind, HouseLayoutSelection};
 use crate::ui::hud;
 use crate::ui::*;
 
@@ -41,10 +43,14 @@ fn journal_confirm_updates_investigation_state() {
         .spawn((Button, Interaction::None, JournalConfirmButton))
         .id();
 
-    app.world_mut().entity_mut(select).insert(Interaction::Pressed);
+    app.world_mut()
+        .entity_mut(select)
+        .insert(Interaction::Pressed);
     app.update();
 
-    app.world_mut().entity_mut(confirm).insert(Interaction::Pressed);
+    app.world_mut()
+        .entity_mut(confirm)
+        .insert(Interaction::Pressed);
     app.update();
 
     let investigation = app.world().resource::<InvestigationState>();
@@ -74,11 +80,7 @@ fn journal_visibility_hides_after_confirm() {
 
     let entity = app
         .world_mut()
-        .spawn((
-            Button,
-            Visibility::Visible,
-            JournalSelectSpiritButton,
-        ))
+        .spawn((Button, Visibility::Visible, JournalSelectSpiritButton))
         .id();
 
     app.update();
@@ -103,11 +105,7 @@ fn journal_visibility_shows_before_confirm() {
 
     let entity = app
         .world_mut()
-        .spawn((
-            Button,
-            Visibility::Hidden,
-            JournalSelectSpiritButton,
-        ))
+        .spawn((Button, Visibility::Hidden, JournalSelectSpiritButton))
         .id();
 
     app.update();
@@ -172,6 +170,7 @@ fn puzzle_title_waits_for_confirmation() {
         active: GhostType::Spirit,
     });
     app.insert_resource(InvestigationState::default());
+    app.insert_resource(SessionState { started: true });
     app.insert_resource(JournalState { open: false });
     app.insert_resource(ExorcismStatus {
         state: crate::gameplay::exorcism::ExorcismState::Inactive,
@@ -279,8 +278,12 @@ fn start_button_moves_to_role_select() {
     app.insert_resource(EvidenceState::default());
     app.insert_resource(PuzzleSpawned(false));
     app.insert_resource(InvestigationState::default());
+    app.insert_resource(ResolutionState::default());
     app.insert_resource(SessionState { started: false });
-    app.insert_resource(CameraControl { yaw: 0.0, pitch: 0.0 });
+    app.insert_resource(CameraControl {
+        yaw: 0.0,
+        pitch: 0.0,
+    });
     app.insert_resource(JournalState { open: false });
 
     let button = app
@@ -328,8 +331,12 @@ fn room_count_selection_changes_only_on_ghost_detail_screen() {
     app.insert_resource(EvidenceState::default());
     app.insert_resource(PuzzleSpawned(false));
     app.insert_resource(InvestigationState::default());
+    app.insert_resource(ResolutionState::default());
     app.insert_resource(SessionState { started: false });
-    app.insert_resource(CameraControl { yaw: 0.0, pitch: 0.0 });
+    app.insert_resource(CameraControl {
+        yaw: 0.0,
+        pitch: 0.0,
+    });
     app.insert_resource(JournalState { open: false });
     app.insert_resource(HouseLayoutSelection::default());
 
@@ -345,9 +352,7 @@ fn room_count_selection_changes_only_on_ghost_detail_screen() {
     let selection = app.world().resource::<HouseLayoutSelection>();
     assert_eq!(selection.selected_kind, HouseLayoutKind::TwoRoom);
 
-    app.world_mut()
-        .resource_mut::<MenuFlowState>()
-        .screen = MenuScreen::GhostDetails;
+    app.world_mut().resource_mut::<MenuFlowState>().screen = MenuScreen::GhostDetails;
     app.world_mut()
         .entity_mut(_button_id)
         .insert(Interaction::None);
@@ -388,8 +393,12 @@ fn begin_haunt_applies_selected_room_count_layout() {
     app.insert_resource(EvidenceState::default());
     app.insert_resource(PuzzleSpawned(false));
     app.insert_resource(InvestigationState::default());
+    app.insert_resource(ResolutionState::default());
     app.insert_resource(SessionState { started: false });
-    app.insert_resource(CameraControl { yaw: 0.0, pitch: 0.0 });
+    app.insert_resource(CameraControl {
+        yaw: 0.0,
+        pitch: 0.0,
+    });
     app.insert_resource(JournalState { open: false });
     app.insert_resource(HouseLayoutSelection::default());
     app.insert_resource(HouseLayout::two_room());
@@ -414,7 +423,9 @@ fn begin_haunt_applies_selected_room_count_layout() {
         .id();
     app.update();
 
-    app.world_mut().entity_mut(room_button).insert(Interaction::None);
+    app.world_mut()
+        .entity_mut(room_button)
+        .insert(Interaction::None);
     app.update();
 
     app.world_mut().spawn((
@@ -431,21 +442,25 @@ fn begin_haunt_applies_selected_room_count_layout() {
 
     let layout = app.world().resource::<HouseLayout>();
     assert_eq!(layout.rooms.len(), 3);
-    assert!(layout.obstacles.iter().any(|o| {
-        o.min_x == -9.4 && o.max_x == -1.8 && o.min_z == -2.2 && o.max_z == -1.8
-    }));
-    assert!(layout.obstacles.iter().any(|o| {
-        o.min_x == 0.2 && o.max_x == 1.8 && o.min_z == -2.2 && o.max_z == -1.8
-    }));
+    assert!(layout
+        .obstacles
+        .iter()
+        .any(|o| { o.min_x == -9.4 && o.max_x == -1.8 && o.min_z == -2.2 && o.max_z == -1.8 }));
+    assert!(layout
+        .obstacles
+        .iter()
+        .any(|o| { o.min_x == 0.2 && o.max_x == 1.8 && o.min_z == -2.2 && o.max_z == -1.8 }));
 
     let collision = app.world().resource::<CollisionWorld>();
     assert_eq!(collision.obstacles.len(), layout.obstacles.len());
-    assert!(collision.obstacles.iter().any(|o| {
-        o.min_x == 1.8 && o.max_x == 2.2 && o.min_z == -9.4 && o.max_z == -1.2
-    }));
-    assert!(collision.obstacles.iter().any(|o| {
-        o.min_x == 1.8 && o.max_x == 2.2 && o.min_z == 1.2 && o.max_z == 9.4
-    }));
+    assert!(collision
+        .obstacles
+        .iter()
+        .any(|o| { o.min_x == 1.8 && o.max_x == 2.2 && o.min_z == -9.4 && o.max_z == -1.2 }));
+    assert!(collision
+        .obstacles
+        .iter()
+        .any(|o| { o.min_x == 1.8 && o.max_x == 2.2 && o.min_z == 1.2 && o.max_z == 9.4 }));
 }
 
 #[test]
@@ -474,8 +489,12 @@ fn begin_investigation_applies_selected_room_count_layout() {
     app.insert_resource(EvidenceState::default());
     app.insert_resource(PuzzleSpawned(false));
     app.insert_resource(InvestigationState::default());
+    app.insert_resource(ResolutionState::default());
     app.insert_resource(SessionState { started: false });
-    app.insert_resource(CameraControl { yaw: 0.0, pitch: 0.0 });
+    app.insert_resource(CameraControl {
+        yaw: 0.0,
+        pitch: 0.0,
+    });
     app.insert_resource(JournalState { open: false });
     app.insert_resource(HouseLayoutSelection::default());
     app.insert_resource(HouseLayout::two_room());
@@ -500,10 +519,10 @@ fn begin_investigation_applies_selected_room_count_layout() {
         .id();
     app.update();
 
+    app.world_mut().resource_mut::<MenuFlowState>().screen = MenuScreen::InvestigatorDetails;
     app.world_mut()
-        .resource_mut::<MenuFlowState>()
-        .screen = MenuScreen::InvestigatorDetails;
-    app.world_mut().entity_mut(room_button).insert(Interaction::None);
+        .entity_mut(room_button)
+        .insert(Interaction::None);
     app.update();
 
     app.world_mut().spawn((
@@ -546,8 +565,15 @@ fn begin_investigation_resets_player_and_ghost_spawns() {
     app.insert_resource(EvidenceState::default());
     app.insert_resource(PuzzleSpawned(false));
     app.insert_resource(InvestigationState::default());
+    app.insert_resource(ResolutionState {
+        outcome: Some(RoundOutcome::WrongGhost),
+        shown: true,
+    });
     app.insert_resource(SessionState { started: false });
-    app.insert_resource(CameraControl { yaw: 1.0, pitch: 0.0 });
+    app.insert_resource(CameraControl {
+        yaw: 1.0,
+        pitch: 0.0,
+    });
     app.insert_resource(JournalState { open: true });
     app.insert_resource(GhostState {
         position: Vec3::new(0.0, 1.6, 0.0),
@@ -590,6 +616,10 @@ fn begin_investigation_resets_player_and_ghost_spawns() {
     let journal = app.world().resource::<JournalState>();
     assert!(!journal.open);
 
+    let resolution = app.world().resource::<ResolutionState>();
+    assert!(resolution.outcome.is_none());
+    assert!(!resolution.shown);
+
     let _button_color = app.world().entity(button).get::<BackgroundColor>().unwrap();
 }
 
@@ -619,8 +649,12 @@ fn begin_investigation_uses_house_layout_spawn_metadata_when_present() {
     app.insert_resource(EvidenceState::default());
     app.insert_resource(PuzzleSpawned(false));
     app.insert_resource(InvestigationState::default());
+    app.insert_resource(ResolutionState::default());
     app.insert_resource(SessionState { started: false });
-    app.insert_resource(CameraControl { yaw: 0.0, pitch: 0.0 });
+    app.insert_resource(CameraControl {
+        yaw: 0.0,
+        pitch: 0.0,
+    });
     app.insert_resource(JournalState { open: false });
     app.insert_resource(GhostState {
         position: Vec3::new(0.0, 1.6, 0.0),
@@ -771,7 +805,10 @@ fn emf_updates_even_when_spiritbox_active() {
     app.insert_resource(GhostState {
         position: Vec3::new(0.0, 0.0, 0.0),
     });
-    app.insert_resource(CameraControl { yaw: 0.0, pitch: 0.0 });
+    app.insert_resource(CameraControl {
+        yaw: 0.0,
+        pitch: 0.0,
+    });
     app.insert_resource(Time::<()>::default());
     app.insert_resource(EquipmentState {
         active: Equipment::Spiritbox,
@@ -802,6 +839,184 @@ fn emf_updates_even_when_spiritbox_active() {
 
     let equipment = app.world().resource::<EquipmentState>();
     assert_eq!(equipment.emf_level, 5);
+}
+
+#[test]
+fn spiritbox_gives_directional_banshee_reply_in_same_room() {
+    let mut app = App::new();
+    app.add_systems(Update, handle_spiritbox);
+    app.insert_resource(MenuState {
+        open: false,
+        selected_role: Role::Investigator,
+    });
+    app.insert_resource(RoleState {
+        current: Role::Investigator,
+    });
+    app.insert_resource(JournalState { open: false });
+    app.insert_resource(GhostTypeState {
+        selected: GhostType::Banshee,
+        active: GhostType::Banshee,
+    });
+    app.insert_resource(GhostState {
+        position: Vec3::new(4.0, 0.0, 0.0),
+    });
+    app.insert_resource(CameraControl {
+        yaw: -std::f32::consts::FRAC_PI_2,
+        pitch: 0.0,
+    });
+    app.insert_resource(Time::<()>::default());
+    app.insert_resource(ButtonInput::<KeyCode>::default());
+    app.insert_resource(EquipmentState {
+        active: Equipment::Spiritbox,
+        emf_level: 0,
+        emf_dwell: 0.0,
+        emf_smoothed: 0.0,
+        emf_evidence_latch: 0.0,
+        spiritbox_message: "Silence...".to_string(),
+        spiritbox_cooldown: 0.0,
+    });
+    app.insert_resource(EvidenceState::default());
+    app.insert_resource(EvidenceTuning::default());
+    app.insert_resource(HouseLayout {
+        bounds: Bounds {
+            min_x: -10.0,
+            max_x: 10.0,
+            min_z: -10.0,
+            max_z: 10.0,
+        },
+        obstacles: Vec::new(),
+        rooms: vec![RoomZone {
+            id: 0,
+            name: "Only Room",
+            bounds: Bounds {
+                min_x: -10.0,
+                max_x: 10.0,
+                min_z: -10.0,
+                max_z: 10.0,
+            },
+        }],
+        walls: Vec::new(),
+        exorcism: crate::gameplay::map::components::ExorcismLayout {
+            spirit_anchors: vec![Vec3::new(0.0, 0.7, 0.0)],
+            banshee_anchors: vec![Vec3::new(0.0, 0.5, 0.0)],
+            onryo_cursed_positions: vec![Vec3::new(0.0, 0.4, 0.0)],
+            onryo_ritual_positions: vec![Vec3::new(0.0, 0.1, 0.0)],
+        },
+        investigator_spawn: Vec3::ZERO,
+        ghost_spawns: vec![Vec3::new(4.0, 1.6, 0.0)],
+    });
+
+    app.world_mut().spawn((
+        Transform::from_xyz(0.0, 0.0, 0.0),
+        GlobalTransform::default(),
+        crate::gameplay::investigator::Player,
+    ));
+
+    {
+        let mut input = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
+        input.press(KeyCode::KeyE);
+    }
+    app.update();
+
+    let equipment = app.world().resource::<EquipmentState>();
+    let evidence = app.world().resource::<EvidenceState>();
+    assert_eq!(equipment.spiritbox_message, "Right... here.");
+    assert!(evidence.spiritbox_response);
+}
+
+#[test]
+fn spiritbox_stays_static_when_banshee_is_in_another_room() {
+    let mut app = App::new();
+    app.add_systems(Update, handle_spiritbox);
+    app.insert_resource(MenuState {
+        open: false,
+        selected_role: Role::Investigator,
+    });
+    app.insert_resource(RoleState {
+        current: Role::Investigator,
+    });
+    app.insert_resource(JournalState { open: false });
+    app.insert_resource(GhostTypeState {
+        selected: GhostType::Banshee,
+        active: GhostType::Banshee,
+    });
+    app.insert_resource(GhostState {
+        position: Vec3::new(4.0, 0.0, 0.0),
+    });
+    app.insert_resource(CameraControl {
+        yaw: -std::f32::consts::FRAC_PI_2,
+        pitch: 0.0,
+    });
+    app.insert_resource(Time::<()>::default());
+    app.insert_resource(ButtonInput::<KeyCode>::default());
+    app.insert_resource(EquipmentState {
+        active: Equipment::Spiritbox,
+        emf_level: 0,
+        emf_dwell: 0.0,
+        emf_smoothed: 0.0,
+        emf_evidence_latch: 0.0,
+        spiritbox_message: "Silence...".to_string(),
+        spiritbox_cooldown: 0.0,
+    });
+    app.insert_resource(EvidenceState::default());
+    app.insert_resource(EvidenceTuning::default());
+    app.insert_resource(HouseLayout {
+        bounds: Bounds {
+            min_x: -10.0,
+            max_x: 10.0,
+            min_z: -10.0,
+            max_z: 10.0,
+        },
+        obstacles: Vec::new(),
+        rooms: vec![
+            RoomZone {
+                id: 0,
+                name: "Left",
+                bounds: Bounds {
+                    min_x: -10.0,
+                    max_x: 0.0,
+                    min_z: -10.0,
+                    max_z: 10.0,
+                },
+            },
+            RoomZone {
+                id: 1,
+                name: "Right",
+                bounds: Bounds {
+                    min_x: 0.1,
+                    max_x: 10.0,
+                    min_z: -10.0,
+                    max_z: 10.0,
+                },
+            },
+        ],
+        walls: Vec::new(),
+        exorcism: crate::gameplay::map::components::ExorcismLayout {
+            spirit_anchors: vec![Vec3::new(0.0, 0.7, 0.0)],
+            banshee_anchors: vec![Vec3::new(0.0, 0.5, 0.0)],
+            onryo_cursed_positions: vec![Vec3::new(0.0, 0.4, 0.0)],
+            onryo_ritual_positions: vec![Vec3::new(0.0, 0.1, 0.0)],
+        },
+        investigator_spawn: Vec3::new(-4.0, 0.0, 0.0),
+        ghost_spawns: vec![Vec3::new(4.0, 1.6, 0.0)],
+    });
+
+    app.world_mut().spawn((
+        Transform::from_xyz(-4.0, 0.0, 0.0),
+        GlobalTransform::default(),
+        crate::gameplay::investigator::Player,
+    ));
+
+    {
+        let mut input = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
+        input.press(KeyCode::KeyE);
+    }
+    app.update();
+
+    let equipment = app.world().resource::<EquipmentState>();
+    let evidence = app.world().resource::<EvidenceState>();
+    assert_eq!(equipment.spiritbox_message, "Static...");
+    assert!(!evidence.spiritbox_response);
 }
 
 #[test]
@@ -913,4 +1128,380 @@ fn spirit_markers_use_house_layout_anchor_positions() {
     assert_eq!(positions.len(), 2);
     assert_eq!(positions[0], Vec3::new(-7.0, 0.7, -3.0));
     assert_eq!(positions[1], Vec3::new(7.0, 0.7, 3.0));
+}
+
+#[test]
+fn objective_text_guides_investigation_before_confirm() {
+    let mut app = App::new();
+    app.add_systems(Update, hud::sync_hud_text);
+    app.insert_resource(MenuState {
+        open: false,
+        selected_role: Role::Investigator,
+    });
+    app.insert_resource(RoleState {
+        current: Role::Investigator,
+    });
+    app.insert_resource(SessionState { started: true });
+    app.insert_resource(JournalState { open: false });
+    app.insert_resource(GhostTypeState {
+        selected: GhostType::Spirit,
+        active: GhostType::Spirit,
+    });
+    app.insert_resource(InvestigationState::default());
+    app.insert_resource(ExorcismStatus {
+        state: crate::gameplay::exorcism::ExorcismState::Inactive,
+        progress: 0.0,
+        stage: 0,
+        stacks: 0.0,
+        max_stacks: 0.0,
+    });
+    app.insert_resource(crate::gameplay::exorcism::tables::ExorcismTables::default());
+    app.insert_resource(EquipmentState {
+        active: Equipment::Emf,
+        emf_level: 0,
+        emf_dwell: 0.0,
+        emf_smoothed: 0.0,
+        emf_evidence_latch: 0.0,
+        spiritbox_message: "Silence...".to_string(),
+        spiritbox_cooldown: 0.0,
+    });
+    app.insert_resource(EvidenceState::default());
+
+    let title = app
+        .world_mut()
+        .spawn((
+            TextBundle::from_section("Placeholder", TextStyle::default()),
+            ObjectiveTitleText,
+        ))
+        .id();
+    let body = app
+        .world_mut()
+        .spawn((
+            TextBundle::from_section("Placeholder", TextStyle::default()),
+            ObjectiveBodyText,
+        ))
+        .id();
+
+    app.update();
+
+    let title_text = &app.world().entity(title).get::<Text>().unwrap().sections[0].value;
+    let body_text = &app.world().entity(body).get::<Text>().unwrap().sections[0].value;
+    assert_eq!(title_text, "Identify the ghost");
+    assert!(body_text.contains("EMF"));
+    assert!(body_text.contains("J"));
+}
+
+#[test]
+fn spirit_objective_text_explains_anchor_vigil() {
+    let mut app = App::new();
+    app.add_systems(Update, hud::sync_hud_text);
+    app.insert_resource(MenuState {
+        open: false,
+        selected_role: Role::Investigator,
+    });
+    app.insert_resource(RoleState {
+        current: Role::Investigator,
+    });
+    app.insert_resource(SessionState { started: true });
+    app.insert_resource(JournalState { open: false });
+    app.insert_resource(GhostTypeState {
+        selected: GhostType::Spirit,
+        active: GhostType::Spirit,
+    });
+    app.insert_resource(InvestigationState {
+        guess: Some(GhostType::Spirit),
+        confirmed: true,
+    });
+    app.insert_resource(ExorcismStatus {
+        state: crate::gameplay::exorcism::ExorcismState::Progress(0.25),
+        progress: 0.25,
+        stage: 1,
+        stacks: 0.0,
+        max_stacks: 2.0,
+    });
+    app.insert_resource(crate::gameplay::exorcism::tables::ExorcismTables::default());
+    app.insert_resource(EquipmentState {
+        active: Equipment::Emf,
+        emf_level: 0,
+        emf_dwell: 0.0,
+        emf_smoothed: 0.0,
+        emf_evidence_latch: 0.0,
+        spiritbox_message: "Silence...".to_string(),
+        spiritbox_cooldown: 0.0,
+    });
+    app.insert_resource(EvidenceState::default());
+
+    let body = app
+        .world_mut()
+        .spawn((
+            TextBundle::from_section("Placeholder", TextStyle::default()),
+            ObjectiveBodyText,
+        ))
+        .id();
+    let detail = app
+        .world_mut()
+        .spawn((
+            TextBundle::from_section("Placeholder", TextStyle::default()),
+            PuzzleDetailText,
+        ))
+        .id();
+
+    app.update();
+
+    let body_text = &app.world().entity(body).get::<Text>().unwrap().sections[0].value;
+    let detail_text = &app.world().entity(detail).get::<Text>().unwrap().sections[0].value;
+    assert!(body_text.contains("No interaction key"));
+    assert!(body_text.contains("two anchors"));
+    assert!(detail_text.contains("Anchors: 1/2 needed"));
+}
+
+#[test]
+fn spirit_puzzle_progress_builds_from_partial_anchor_coverage() {
+    let mut app = App::new();
+    app.add_plugins(ExorcismPlugin);
+    app.insert_resource(MenuState {
+        open: false,
+        selected_role: Role::Investigator,
+    });
+    app.insert_resource(RoleState {
+        current: Role::Investigator,
+    });
+    app.insert_resource(JournalState { open: false });
+    app.insert_resource(GhostTypeState {
+        selected: GhostType::Spirit,
+        active: GhostType::Spirit,
+    });
+    app.insert_resource(GhostState {
+        position: Vec3::ZERO,
+    });
+    app.insert_resource(ButtonInput::<KeyCode>::default());
+    app.insert_resource(Time::<()>::default());
+    app.insert_resource(Assets::<Mesh>::default());
+    app.insert_resource(Assets::<StandardMaterial>::default());
+    app.insert_resource(HouseLayout {
+        bounds: Bounds {
+            min_x: -10.0,
+            max_x: 10.0,
+            min_z: -10.0,
+            max_z: 10.0,
+        },
+        obstacles: Vec::new(),
+        rooms: vec![RoomZone {
+            id: 0,
+            name: "Only Room",
+            bounds: Bounds {
+                min_x: -10.0,
+                max_x: 10.0,
+                min_z: -10.0,
+                max_z: 10.0,
+            },
+        }],
+        walls: Vec::new(),
+        exorcism: crate::gameplay::map::components::ExorcismLayout {
+            spirit_anchors: vec![
+                Vec3::new(-4.0, 0.7, 0.0),
+                Vec3::new(0.0, 0.7, 0.0),
+                Vec3::new(4.0, 0.7, 0.0),
+            ],
+            banshee_anchors: vec![Vec3::new(0.0, 0.5, 0.0)],
+            onryo_cursed_positions: vec![Vec3::new(-2.0, 0.4, 0.0)],
+            onryo_ritual_positions: vec![Vec3::new(2.0, 0.1, 0.0)],
+        },
+        investigator_spawn: Vec3::new(0.0, 0.9, -2.0),
+        ghost_spawns: vec![Vec3::new(0.0, 1.6, 2.0)],
+    });
+
+    app.world_mut().spawn(Camera3dBundle {
+        transform: Transform::from_xyz(0.0, 1.6, -4.0).looking_at(Vec3::new(0.0, 0.7, 0.0), Vec3::Y),
+        ..default()
+    });
+
+    {
+        let mut investigation = app.world_mut().resource_mut::<InvestigationState>();
+        investigation.guess = Some(GhostType::Spirit);
+        investigation.confirmed = true;
+    }
+
+    app.update();
+    {
+        let mut time = app.world_mut().resource_mut::<Time>();
+        time.advance_by(std::time::Duration::from_secs_f32(1.0));
+    }
+    app.update();
+
+    let status = app.world().resource::<ExorcismStatus>();
+    assert!(status.progress > 0.0);
+    assert_eq!(status.stage, 1);
+    assert_eq!(status.max_stacks as u32, 2);
+}
+
+#[test]
+fn spirit_puzzle_completes_when_two_anchors_are_maintained() {
+    let mut app = App::new();
+    app.add_plugins(ExorcismPlugin);
+    app.insert_resource(MenuState {
+        open: false,
+        selected_role: Role::Investigator,
+    });
+    app.insert_resource(RoleState {
+        current: Role::Investigator,
+    });
+    app.insert_resource(JournalState { open: false });
+    app.insert_resource(GhostTypeState {
+        selected: GhostType::Spirit,
+        active: GhostType::Spirit,
+    });
+    app.insert_resource(GhostState {
+        position: Vec3::ZERO,
+    });
+    app.insert_resource(ButtonInput::<KeyCode>::default());
+    app.insert_resource(Time::<()>::default());
+    app.insert_resource(Assets::<Mesh>::default());
+    app.insert_resource(Assets::<StandardMaterial>::default());
+    app.insert_resource(HouseLayout {
+        bounds: Bounds {
+            min_x: -12.0,
+            max_x: 12.0,
+            min_z: -12.0,
+            max_z: 12.0,
+        },
+        obstacles: Vec::new(),
+        rooms: vec![RoomZone {
+            id: 0,
+            name: "Only Room",
+            bounds: Bounds {
+                min_x: -12.0,
+                max_x: 12.0,
+                min_z: -12.0,
+                max_z: 12.0,
+            },
+        }],
+        walls: Vec::new(),
+        exorcism: crate::gameplay::map::components::ExorcismLayout {
+            spirit_anchors: vec![
+                Vec3::new(-3.0, 0.7, 0.0),
+                Vec3::new(3.0, 0.7, 0.0),
+                Vec3::new(0.0, 0.7, 8.5),
+            ],
+            banshee_anchors: vec![Vec3::new(0.0, 0.5, 0.0)],
+            onryo_cursed_positions: vec![Vec3::new(-2.0, 0.4, 0.0)],
+            onryo_ritual_positions: vec![Vec3::new(2.0, 0.1, 0.0)],
+        },
+        investigator_spawn: Vec3::new(0.0, 0.9, -2.0),
+        ghost_spawns: vec![Vec3::new(0.0, 1.6, 2.0)],
+    });
+
+    app.world_mut().spawn(Camera3dBundle {
+        transform: Transform::from_xyz(0.0, 1.6, -4.0)
+            .looking_at(Vec3::new(0.0, 0.7, 0.0), Vec3::Y),
+        ..default()
+    });
+
+    {
+        let mut investigation = app.world_mut().resource_mut::<InvestigationState>();
+        investigation.guess = Some(GhostType::Spirit);
+        investigation.confirmed = true;
+    }
+
+    app.update();
+    {
+        let mut time = app.world_mut().resource_mut::<Time>();
+        time.advance_by(std::time::Duration::from_secs_f32(7.0));
+    }
+    app.update();
+
+    let status = app.world().resource::<ExorcismStatus>();
+    assert!(matches!(
+        status.state,
+        crate::gameplay::exorcism::ExorcismState::Complete
+    ));
+    assert_eq!(status.stage, 2);
+    assert_eq!(status.max_stacks as u32, 2);
+}
+
+#[test]
+fn resolution_screen_opens_for_wrong_ghost_outcome() {
+    let mut app = App::new();
+    app.add_systems(Update, crate::ui::lobby::maybe_open_resolution_screen);
+    app.insert_resource(MenuState {
+        open: false,
+        selected_role: Role::Investigator,
+    });
+    app.insert_resource(MenuFlowState {
+        screen: MenuScreen::RoleSelect,
+    });
+    app.insert_resource(RoleState {
+        current: Role::Investigator,
+    });
+    app.insert_resource(SessionState { started: true });
+    app.insert_resource(JournalState { open: true });
+    app.insert_resource(GhostTypeState {
+        selected: GhostType::Banshee,
+        active: GhostType::Spirit,
+    });
+    app.insert_resource(InvestigationState {
+        guess: Some(GhostType::Banshee),
+        confirmed: true,
+    });
+    app.insert_resource(ExorcismStatus {
+        state: crate::gameplay::exorcism::ExorcismState::Failed,
+        progress: 0.0,
+        stage: 0,
+        stacks: 0.0,
+        max_stacks: 0.0,
+    });
+    app.insert_resource(ResolutionState::default());
+
+    app.update();
+
+    let menu = app.world().resource::<MenuState>();
+    let flow = app.world().resource::<MenuFlowState>();
+    let journal = app.world().resource::<JournalState>();
+    let resolution = app.world().resource::<ResolutionState>();
+    assert!(menu.open);
+    assert!(matches!(flow.screen, MenuScreen::Resolution));
+    assert!(!journal.open);
+    assert_eq!(resolution.outcome, Some(RoundOutcome::WrongGhost));
+    assert!(resolution.shown);
+}
+
+#[test]
+fn resolution_text_describes_wrong_ghost() {
+    let mut app = App::new();
+    app.add_systems(Update, crate::ui::lobby::sync_resolution_text);
+    app.insert_resource(ResolutionState {
+        outcome: Some(RoundOutcome::WrongGhost),
+        shown: true,
+    });
+    app.insert_resource(InvestigationState {
+        guess: Some(GhostType::Banshee),
+        confirmed: true,
+    });
+    app.insert_resource(GhostTypeState {
+        selected: GhostType::Banshee,
+        active: GhostType::Spirit,
+    });
+
+    let title = app
+        .world_mut()
+        .spawn((
+            TextBundle::from_section("Placeholder", TextStyle::default()),
+            ResolutionTitleText,
+        ))
+        .id();
+    let body = app
+        .world_mut()
+        .spawn((
+            TextBundle::from_section("Placeholder", TextStyle::default()),
+            ResolutionBodyText,
+        ))
+        .id();
+
+    app.update();
+
+    let title_text = &app.world().entity(title).get::<Text>().unwrap().sections[0].value;
+    let body_text = &app.world().entity(body).get::<Text>().unwrap().sections[0].value;
+    assert_eq!(title_text, "Wrong Ghost");
+    assert!(body_text.contains("Banshee"));
+    assert!(body_text.contains("Spirit"));
 }

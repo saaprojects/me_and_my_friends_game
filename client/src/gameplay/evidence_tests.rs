@@ -1,8 +1,9 @@
 use crate::core::GhostType;
 use crate::gameplay::evidence::{
-    emf_five_candidate, emf_level, overlap_distance, spiritbox_is_evidence, spiritbox_reply,
-    EvidenceTuning, SpiritboxReply,
+    emf_five_candidate, emf_level, overlap_distance, spiritbox_bearing, spiritbox_is_evidence,
+    spiritbox_reply, EvidenceTuning, SpiritboxBearing, SpiritboxReply,
 };
+use bevy::prelude::Vec3;
 
 #[test]
 fn spirit_emf_levels_ramp_with_distance() {
@@ -58,31 +59,123 @@ fn emf_five_candidate_requires_intersection() {
 }
 
 #[test]
-fn spiritbox_replies_match_banshee_distance() {
+fn spiritbox_replies_directionally_for_banshee_contact() {
+    let tuning = EvidenceTuning::default();
     assert_eq!(
-        spiritbox_reply(GhostType::Banshee, true),
+        spiritbox_reply(
+            GhostType::Banshee,
+            true,
+            tuning.spiritbox_range - 0.1,
+            &tuning,
+            SpiritboxBearing::Ahead
+        ),
         SpiritboxReply::Here
     );
     assert_eq!(
-        spiritbox_reply(GhostType::Banshee, false),
+        spiritbox_reply(
+            GhostType::Banshee,
+            true,
+            tuning.spiritbox_range - 0.1,
+            &tuning,
+            SpiritboxBearing::Left
+        ),
+        SpiritboxReply::Left
+    );
+    assert_eq!(
+        spiritbox_reply(
+            GhostType::Banshee,
+            true,
+            tuning.spiritbox_range - 0.1,
+            &tuning,
+            SpiritboxBearing::Right
+        ),
+        SpiritboxReply::Right
+    );
+    assert_eq!(
+        spiritbox_reply(
+            GhostType::Banshee,
+            true,
+            tuning.spiritbox_range - 0.1,
+            &tuning,
+            SpiritboxBearing::Behind
+        ),
+        SpiritboxReply::Behind
+    );
+}
+
+#[test]
+fn spiritbox_requires_banshee_same_room_and_range() {
+    let tuning = EvidenceTuning::default();
+    assert_eq!(
+        spiritbox_reply(
+            GhostType::Banshee,
+            false,
+            tuning.spiritbox_range - 0.1,
+            &tuning,
+            SpiritboxBearing::Ahead
+        ),
+        SpiritboxReply::Static
+    );
+    assert_eq!(
+        spiritbox_reply(
+            GhostType::Banshee,
+            true,
+            tuning.spiritbox_range + 0.1,
+            &tuning,
+            SpiritboxBearing::Ahead
+        ),
+        SpiritboxReply::Static
+    );
+    assert_eq!(
+        spiritbox_reply(
+            GhostType::Spirit,
+            true,
+            tuning.spiritbox_range - 0.1,
+            &tuning,
+            SpiritboxBearing::Ahead
+        ),
+        SpiritboxReply::Static
+    );
+    assert_eq!(
+        spiritbox_reply(
+            GhostType::Onryo,
+            true,
+            tuning.spiritbox_range - 0.1,
+            &tuning,
+            SpiritboxBearing::Ahead
+        ),
         SpiritboxReply::Static
     );
 }
 
 #[test]
-fn spiritbox_non_banshee_is_static_or_silence() {
+fn spiritbox_bearing_tracks_relative_direction() {
+    let player_pos = Vec3::ZERO;
+    let forward = Vec3::Z;
+
     assert_eq!(
-        spiritbox_reply(GhostType::Spirit, false),
-        SpiritboxReply::Static
+        spiritbox_bearing(forward, player_pos, Vec3::new(0.0, 0.0, 4.0)),
+        SpiritboxBearing::Ahead
     );
     assert_eq!(
-        spiritbox_reply(GhostType::Onryo, true),
-        SpiritboxReply::Static
+        spiritbox_bearing(forward, player_pos, Vec3::new(-4.0, 0.0, 0.0)),
+        SpiritboxBearing::Left
+    );
+    assert_eq!(
+        spiritbox_bearing(forward, player_pos, Vec3::new(4.0, 0.0, 0.0)),
+        SpiritboxBearing::Right
+    );
+    assert_eq!(
+        spiritbox_bearing(forward, player_pos, Vec3::new(0.0, 0.0, -4.0)),
+        SpiritboxBearing::Behind
     );
 }
 
 #[test]
-fn spiritbox_evidence_only_for_close_or_here() {
+fn spiritbox_evidence_only_for_actual_replies() {
     assert!(spiritbox_is_evidence(SpiritboxReply::Here));
+    assert!(spiritbox_is_evidence(SpiritboxReply::Left));
+    assert!(spiritbox_is_evidence(SpiritboxReply::Right));
+    assert!(spiritbox_is_evidence(SpiritboxReply::Behind));
     assert!(!spiritbox_is_evidence(SpiritboxReply::Static));
 }

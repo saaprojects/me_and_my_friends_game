@@ -1,10 +1,21 @@
 use crate::core::GhostType;
-use bevy::prelude::Resource;
+use bevy::prelude::{Resource, Vec3};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SpiritboxReply {
     Static,
     Here,
+    Left,
+    Right,
+    Behind,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SpiritboxBearing {
+    Ahead,
+    Left,
+    Right,
+    Behind,
 }
 
 #[derive(Resource, Clone)]
@@ -24,6 +35,7 @@ pub struct EvidenceTuning {
     pub emf_jitter_f2: f32,
     pub emf_evidence_latch: f32,
     pub emf_jitter_phase: f32,
+    pub spiritbox_range: f32,
     pub spiritbox_cooldown_hit: f32,
     pub spiritbox_cooldown_miss: f32,
 }
@@ -46,6 +58,7 @@ impl Default for EvidenceTuning {
             emf_jitter_f2: 9.1,
             emf_evidence_latch: 1.2,
             emf_jitter_phase: 0.0,
+            spiritbox_range: 5.5,
             spiritbox_cooldown_hit: 1.6,
             spiritbox_cooldown_miss: 1.2,
         }
@@ -86,21 +99,57 @@ pub fn emf_five_candidate(
     ghost_type == GhostType::Spirit && distance <= overlap_distance(tuning)
 }
 
-pub fn spiritbox_reply(ghost_type: GhostType, overlap: bool) -> SpiritboxReply {
-    match ghost_type {
-        GhostType::Banshee => {
-            if overlap {
-                SpiritboxReply::Here
-            } else {
-                SpiritboxReply::Static
-            }
-        }
-        GhostType::Spirit | GhostType::Onryo => SpiritboxReply::Static,
+pub fn spiritbox_bearing(
+    player_forward: Vec3,
+    player_pos: Vec3,
+    ghost_pos: Vec3,
+) -> SpiritboxBearing {
+    let forward_flat = Vec3::new(player_forward.x, 0.0, player_forward.z).normalize_or_zero();
+    let to_ghost = ghost_pos - player_pos;
+    let to_ghost_flat = Vec3::new(to_ghost.x, 0.0, to_ghost.z).normalize_or_zero();
+
+    if forward_flat.length_squared() <= f32::EPSILON || to_ghost_flat.length_squared() <= f32::EPSILON
+    {
+        return SpiritboxBearing::Ahead;
+    }
+
+    let front_dot = forward_flat.dot(to_ghost_flat);
+    if front_dot >= 0.35 {
+        return SpiritboxBearing::Ahead;
+    }
+    if front_dot <= -0.35 {
+        return SpiritboxBearing::Behind;
+    }
+
+    let right = Vec3::new(forward_flat.z, 0.0, -forward_flat.x).normalize_or_zero();
+    if right.dot(to_ghost_flat) >= 0.0 {
+        SpiritboxBearing::Right
+    } else {
+        SpiritboxBearing::Left
+    }
+}
+
+pub fn spiritbox_reply(
+    ghost_type: GhostType,
+    same_room: bool,
+    distance: f32,
+    tuning: &EvidenceTuning,
+    bearing: SpiritboxBearing,
+) -> SpiritboxReply {
+    if ghost_type != GhostType::Banshee || !same_room || distance > tuning.spiritbox_range {
+        return SpiritboxReply::Static;
+    }
+
+    match bearing {
+        SpiritboxBearing::Ahead => SpiritboxReply::Here,
+        SpiritboxBearing::Left => SpiritboxReply::Left,
+        SpiritboxBearing::Right => SpiritboxReply::Right,
+        SpiritboxBearing::Behind => SpiritboxReply::Behind,
     }
 }
 
 pub fn spiritbox_is_evidence(reply: SpiritboxReply) -> bool {
-    matches!(reply, SpiritboxReply::Here)
+    !matches!(reply, SpiritboxReply::Static)
 }
 
 impl SpiritboxReply {
@@ -108,6 +157,9 @@ impl SpiritboxReply {
         match self {
             SpiritboxReply::Static => "Static...",
             SpiritboxReply::Here => "Right... here.",
+            SpiritboxReply::Left => "To your left...",
+            SpiritboxReply::Right => "To your right...",
+            SpiritboxReply::Behind => "Behind you...",
         }
     }
 }

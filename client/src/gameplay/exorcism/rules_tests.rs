@@ -3,29 +3,44 @@ use crate::gameplay::exorcism::tables::ExorcismTables;
 use crate::gameplay::exorcism::ExorcismState;
 
 #[test]
-fn spirit_progress_increases_when_watched() {
+fn spirit_progress_rises_toward_anchor_coverage() {
     let tables = ExorcismTables::default();
     let next = spirit_progress(
-        0.2,
-        true,
+        0.0,
+        0.33,
         1.0,
         tables.spirit.rate_up,
         tables.spirit.rate_down,
     );
-    assert!(next > 0.2);
+    assert!(next > 0.0);
+    assert!(next <= 0.33);
 }
 
 #[test]
-fn spirit_progress_decays_when_unwatched() {
+fn spirit_progress_falls_back_when_coverage_drops() {
     let tables = ExorcismTables::default();
     let next = spirit_progress(
-        0.2,
-        false,
+        0.7,
+        0.33,
         1.0,
         tables.spirit.rate_up,
         tables.spirit.rate_down,
     );
-    assert!(next < 0.2);
+    assert!(next < 0.7);
+    assert!(next >= 0.33);
+}
+
+#[test]
+fn spirit_progress_stays_capped_by_current_coverage() {
+    let tables = ExorcismTables::default();
+    let next = spirit_progress(
+        0.2,
+        0.33,
+        10.0,
+        tables.spirit.rate_up,
+        tables.spirit.rate_down,
+    );
+    assert!((next - 0.33).abs() < f32::EPSILON);
 }
 
 #[test]
