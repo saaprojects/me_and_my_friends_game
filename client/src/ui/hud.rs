@@ -2,7 +2,9 @@ use crate::prelude::*;
 
 use crate::core::{JournalState, MenuState, RoleState, SessionState};
 use crate::gameplay::exorcism::tables::{puzzle_name, ExorcismTables};
-use crate::gameplay::exorcism::{ExorcismState, ExorcismStatus, InvestigationState};
+use crate::gameplay::exorcism::{
+    BansheeSequence, ExorcismState, ExorcismStatus, InvestigationState,
+};
 use crate::gameplay::investigator::tools::{EquipmentState, EvidenceState};
 use crate::ui::{
     EmfText, GhostAbilityText, GhostHudRoot, HudRoot, JournalConfirmButton, JournalConfirmText,
@@ -575,6 +577,7 @@ pub fn sync_hud_text(
     exorcism: Res<ExorcismStatus>,
     investigation: Res<InvestigationState>,
     tables: Res<ExorcismTables>,
+    banshee_sequence: Option<Res<BansheeSequence>>,
     house_layout: Option<Res<crate::gameplay::map::HouseLayout>>,
     mut texts: Query<(
         &mut Text,
@@ -641,16 +644,33 @@ pub fn sync_hud_text(
     } else {
         match investigation.guess.unwrap_or(ghost_type.active) {
             crate::core::GhostType::Spirit => "No interaction key here. Sweep your view across the blue anchors while their room lights stay on. Keep any two anchors recently witnessed to finish the vigil.".to_string(),
-            crate::core::GhostType::Banshee => "Press F at the violet anchors in order. Keep the rhythm steady: too fast or too slow breaks the sequence.".to_string(),
+            crate::core::GhostType::Banshee => format!(
+                "Stand on the colored node matching the next color in the order below, then press F. The color order changes each hunt. Wait at least {:.1}s between presses, but no longer than {:.1}s, or the sequence breaks.",
+                tables.banshee.timing_min,
+                tables.banshee.timing_max
+            ),
             crate::core::GhostType::Onryo => "Use F to carry red cursed objects onto the blue ritual pads in order. Carrying builds stacks, so move decisively.".to_string(),
         }
     };
 
     let puzzle_label = puzzle_name(investigation.guess.unwrap_or(ghost_type.active));
-    let sequence_len = house_layout
+    let layout_sequence_len = house_layout
         .as_ref()
         .map(|layout| layout.exorcism.banshee_anchors.len() as u8)
         .unwrap_or_else(|| tables.banshee.sequence_len());
+    let sequence_len = banshee_sequence
+        .as_ref()
+        .map(|sequence| sequence.sequence_len())
+        .unwrap_or(layout_sequence_len)
+        .max(1);
+    let banshee_order = banshee_sequence
+        .as_ref()
+        .map(|sequence| sequence.order_summary())
+        .unwrap_or_else(|| "Violet -> Amber -> Teal".to_string());
+    let banshee_target = banshee_sequence
+        .as_ref()
+        .map(|sequence| sequence.current_target_label(exorcism.stage))
+        .unwrap_or("Violet");
 
     let awaiting = !investigation.confirmed || investigation.guess.is_none();
     for (
@@ -733,10 +753,13 @@ pub fn sync_hud_text(
                     }
                     crate::core::GhostType::Banshee => {
                         if matches!(exorcism.state, ExorcismState::Complete) {
-                            "Sequence: Complete".to_string()
+                            format!("Order: {} | Sequence: Complete", banshee_order)
                         } else {
                             let step = exorcism.stage.min(sequence_len.saturating_sub(1)) + 1;
-                            format!("Sequence: {}/{}", step, sequence_len.max(1))
+                            format!(
+                                "Next: {} | Order: {} | Step: {}/{}",
+                                banshee_target, banshee_order, step, sequence_len
+                            )
                         }
                     }
                     crate::core::GhostType::Onryo => {

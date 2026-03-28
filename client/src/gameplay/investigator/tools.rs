@@ -7,8 +7,8 @@ use crate::gameplay::evidence::{
 };
 use crate::gameplay::ghost::GhostState;
 use crate::gameplay::investigator::Player;
-use crate::gameplay::map::HouseLayout;
 use crate::gameplay::map::systems::{room_id, room_id_in_house};
+use crate::gameplay::map::HouseLayout;
 
 #[derive(Resource)]
 pub struct EquipmentState {
@@ -125,8 +125,8 @@ pub fn update_emf_reading(
         };
         if jitter_amp > 0.0 {
             let t = time.elapsed_seconds() + tuning.emf_jitter_phase;
-            let jitter = (t * tuning.emf_jitter_f1).sin() * 0.6
-                + (t * tuning.emf_jitter_f2).sin() * 0.4;
+            let jitter =
+                (t * tuning.emf_jitter_f1).sin() * 0.6 + (t * tuning.emf_jitter_f2).sin() * 0.4;
             target_level += jitter * jitter_amp;
         }
         target_level = target_level.clamp(0.0, 4.49);
@@ -213,12 +213,7 @@ pub fn handle_spiritbox(
     };
 }
 
-fn facing_ghost(
-    player_pos: Vec3,
-    ghost_pos: Vec3,
-    forward: Vec3,
-    facing_dot: f32,
-) -> bool {
+fn facing_ghost(player_pos: Vec3, ghost_pos: Vec3, forward: Vec3, facing_dot: f32) -> bool {
     let to_ghost = ghost_pos - player_pos;
     let to_ghost_flat = Vec3::new(to_ghost.x, 0.0, to_ghost.z);
     if to_ghost_flat.length_squared() <= f32::EPSILON {

@@ -91,11 +91,7 @@ pub fn emf_level(
     }
 }
 
-pub fn emf_five_candidate(
-    ghost_type: GhostType,
-    distance: f32,
-    tuning: &EvidenceTuning,
-) -> bool {
+pub fn emf_five_candidate(ghost_type: GhostType, distance: f32, tuning: &EvidenceTuning) -> bool {
     ghost_type == GhostType::Spirit && distance <= overlap_distance(tuning)
 }
 
@@ -108,7 +104,8 @@ pub fn spiritbox_bearing(
     let to_ghost = ghost_pos - player_pos;
     let to_ghost_flat = Vec3::new(to_ghost.x, 0.0, to_ghost.z).normalize_or_zero();
 
-    if forward_flat.length_squared() <= f32::EPSILON || to_ghost_flat.length_squared() <= f32::EPSILON
+    if forward_flat.length_squared() <= f32::EPSILON
+        || to_ghost_flat.length_squared() <= f32::EPSILON
     {
         return SpiritboxBearing::Ahead;
     }

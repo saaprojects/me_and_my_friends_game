@@ -64,7 +64,8 @@ fn scene_asset_file(scene_path: &str) -> &str {
 
 fn scene_exists(scene_path: &str) -> bool {
     let file = scene_asset_file(scene_path);
-    Path::new("assets").join(file).exists() || Path::new("client").join("assets").join(file).exists()
+    Path::new("assets").join(file).exists()
+        || Path::new("client").join("assets").join(file).exists()
 }
 
 fn choose_shell_scene(
@@ -297,8 +298,19 @@ pub fn room_id_in_house(layout: &HouseLayout, position: Vec3) -> Option<u8> {
         .map(|room| room.id)
 }
 
+#[allow(dead_code)]
 pub fn investigator_spawn_position() -> Vec3 {
     default_house_layout().investigator_spawn
+}
+
+#[cfg(test)]
+pub fn investigator_spawn_positions() -> Vec<Vec3> {
+    default_house_layout().investigator_spawn_candidates()
+}
+
+#[cfg(test)]
+pub fn random_investigator_spawn_position() -> Vec3 {
+    default_house_layout().random_investigator_spawn()
 }
 
 #[allow(dead_code)]
@@ -306,8 +318,13 @@ pub fn ghost_spawn_positions() -> Vec<Vec3> {
     default_house_layout().ghost_spawns
 }
 
+#[cfg(test)]
 pub fn random_ghost_spawn_position() -> Vec3 {
     default_house_layout().random_ghost_spawn()
+}
+
+pub fn random_round_start_positions() -> (Vec3, Vec3) {
+    default_house_layout().random_start_positions()
 }
 
 pub(crate) fn setup_scene(
@@ -342,11 +359,7 @@ pub(crate) fn setup_scene(
     if !spawn_curated_set_dressing(&mut commands, &asset_server, &house) {
         spawn_fallback_props(&mut commands, &mut meshes, &mut materials);
     }
-    spawn_room_lights(
-        &mut commands,
-        &house,
-        room_lights.as_deref(),
-    );
+    spawn_room_lights(&mut commands, &house, room_lights.as_deref());
 
     let player_mesh = meshes.add(Cuboid::new(0.7, 1.8, 0.7));
     let player_material = materials.add(StandardMaterial {
@@ -360,7 +373,7 @@ pub(crate) fn setup_scene(
         PbrBundle {
             mesh: player_mesh,
             material: player_material,
-            transform: Transform::from_translation(house.investigator_spawn),
+            transform: Transform::from_translation(house.initial_investigator_spawn()),
             ..default()
         },
         Player,
@@ -484,8 +497,10 @@ fn spawn_layout_roof(
 
 fn roof_dimensions(house: &HouseLayout) -> (f32, f32, f32) {
     if house.walls.is_empty() {
-        let roof_size_x = (house.bounds.max_x - house.bounds.min_x) + 0.4 + ROOF_OVERHANG_PER_SIDE * 2.0;
-        let roof_size_z = (house.bounds.max_z - house.bounds.min_z) + 0.4 + ROOF_OVERHANG_PER_SIDE * 2.0;
+        let roof_size_x =
+            (house.bounds.max_x - house.bounds.min_x) + 0.4 + ROOF_OVERHANG_PER_SIDE * 2.0;
+        let roof_size_z =
+            (house.bounds.max_z - house.bounds.min_z) + 0.4 + ROOF_OVERHANG_PER_SIDE * 2.0;
         return (
             roof_size_x,
             roof_size_z,
@@ -531,7 +546,9 @@ fn spawn_room_lights(commands: &mut Commands, house: &HouseLayout, lights: Optio
         let depth = room.bounds.max_z - room.bounds.min_z;
         let center_x = (room.bounds.min_x + room.bounds.max_x) * 0.5;
         let center_z = (room.bounds.min_z + room.bounds.max_z) * 0.5;
-        let enabled = lights.map(|state| state.is_enabled(room.id)).unwrap_or(true);
+        let enabled = lights
+            .map(|state| state.is_enabled(room.id))
+            .unwrap_or(true);
         let initial_intensity = if enabled { ON_INTENSITY } else { OFF_INTENSITY };
         let mut fixture_positions = vec![Vec3::new(center_x, 3.3, center_z)];
         if depth > width * 1.35 {
@@ -567,7 +584,8 @@ fn spawn_room_lights(commands: &mut Commands, house: &HouseLayout, lights: Optio
                     flicker_active: false,
                     flicker_elapsed: 0.0,
                     flicker_duration: 0.42
-                        + ((room.id as f32 * 1.37 + position.x * 0.17 + position.z * 0.11).sin()
+                        + ((room.id as f32 * 1.37 + position.x * 0.17 + position.z * 0.11)
+                            .sin()
                             .abs()
                             * 0.16),
                     flicker_from: initial_intensity,
@@ -634,11 +652,7 @@ pub(crate) fn sync_layout_walls(
     if !spawn_curated_set_dressing(&mut commands, &asset_server, &house) {
         spawn_fallback_props(&mut commands, &mut meshes, &mut materials);
     }
-    spawn_room_lights(
-        &mut commands,
-        &house,
-        room_lights.as_deref(),
-    );
+    spawn_room_lights(&mut commands, &house, room_lights.as_deref());
 }
 
 pub(crate) fn sync_room_light_visuals(
@@ -718,7 +732,8 @@ pub(crate) fn animate_room_light_flicker(
         let progress = (visual.flicker_elapsed / visual.flicker_duration).clamp(0.0, 1.0);
         let base = visual.flicker_from + (visual.flicker_to - visual.flicker_from) * progress;
         let turning_on = visual.flicker_to > visual.flicker_from;
-        let flicker = light_flicker_multiplier(visual.flicker_elapsed, visual.flicker_phase, turning_on);
+        let flicker =
+            light_flicker_multiplier(visual.flicker_elapsed, visual.flicker_phase, turning_on);
         let shaped = if turning_on {
             (0.22 + flicker * 0.95).min(1.25)
         } else {

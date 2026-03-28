@@ -8,7 +8,8 @@ use crate::core::{
 };
 use crate::gameplay::evidence::EvidenceTuning;
 use crate::gameplay::exorcism::{
-    ExorcismPlugin, ExorcismStatus, InvestigationState, PuzzleSpawned, SpiritMarker,
+    BansheeNodeColor, BansheeSequence, ExorcismPlugin, ExorcismStatus, InvestigationState,
+    PuzzleSpawned, SpiritMarker,
 };
 use crate::gameplay::ghost::GhostState;
 use crate::gameplay::investigator::tools::{
@@ -601,14 +602,14 @@ fn begin_investigation_resets_player_and_ghost_spawns() {
     app.update();
 
     let player_transform = app.world().entity(player).get::<Transform>().unwrap();
-    assert_eq!(
-        player_transform.translation,
-        crate::gameplay::map::systems::investigator_spawn_position()
-    );
+    let allowed_investigator_spawns = crate::gameplay::map::systems::investigator_spawn_positions();
+    assert!(allowed_investigator_spawns.contains(&player_transform.translation));
 
     let ghost = app.world().resource::<GhostState>();
     let allowed = crate::gameplay::map::systems::ghost_spawn_positions();
     assert!(allowed.contains(&ghost.position));
+    let separation = player_transform.translation - ghost.position;
+    assert!(separation.x * separation.x + separation.z * separation.z >= 1.0);
 
     let role = app.world().resource::<RoleState>();
     assert!(matches!(role.current, Role::Investigator));
@@ -697,6 +698,7 @@ fn begin_investigation_uses_house_layout_spawn_metadata_when_present() {
             onryo_ritual_positions: vec![Vec3::new(8.0, 0.1, 3.0)],
         },
         investigator_spawn: Vec3::new(-8.0, 0.9, -3.0),
+        investigator_spawns: vec![Vec3::new(-8.0, 0.9, -3.0), Vec3::new(-7.0, 0.9, 4.0)],
         ghost_spawns: vec![Vec3::new(8.0, 1.6, 3.0)],
     });
 
@@ -719,7 +721,8 @@ fn begin_investigation_uses_house_layout_spawn_metadata_when_present() {
     app.update();
 
     let player_transform = app.world().entity(player).get::<Transform>().unwrap();
-    assert_eq!(player_transform.translation, Vec3::new(-8.0, 0.9, -3.0));
+    assert!([Vec3::new(-8.0, 0.9, -3.0), Vec3::new(-7.0, 0.9, 4.0)]
+        .contains(&player_transform.translation));
     assert_eq!(
         app.world().resource::<GhostState>().position,
         Vec3::new(8.0, 1.6, 3.0)
@@ -903,6 +906,7 @@ fn spiritbox_gives_directional_banshee_reply_in_same_room() {
             onryo_ritual_positions: vec![Vec3::new(0.0, 0.1, 0.0)],
         },
         investigator_spawn: Vec3::ZERO,
+        investigator_spawns: Vec::new(),
         ghost_spawns: vec![Vec3::new(4.0, 1.6, 0.0)],
     });
 
@@ -998,6 +1002,7 @@ fn spiritbox_stays_static_when_banshee_is_in_another_room() {
             onryo_ritual_positions: vec![Vec3::new(0.0, 0.1, 0.0)],
         },
         investigator_spawn: Vec3::new(-4.0, 0.0, 0.0),
+        investigator_spawns: Vec::new(),
         ghost_spawns: vec![Vec3::new(4.0, 1.6, 0.0)],
     });
 
@@ -1106,6 +1111,7 @@ fn spirit_markers_use_house_layout_anchor_positions() {
             onryo_ritual_positions: vec![Vec3::new(3.0, 0.1, 0.0)],
         },
         investigator_spawn: Vec3::new(0.0, 0.9, 0.0),
+        investigator_spawns: Vec::new(),
         ghost_spawns: vec![Vec3::new(1.0, 1.6, 1.0)],
     });
 
@@ -1256,6 +1262,216 @@ fn spirit_objective_text_explains_anchor_vigil() {
 }
 
 #[test]
+fn banshee_objective_text_shows_color_order_and_next_target() {
+    let mut app = App::new();
+    app.add_systems(Update, hud::sync_hud_text);
+    app.insert_resource(MenuState {
+        open: false,
+        selected_role: Role::Investigator,
+    });
+    app.insert_resource(RoleState {
+        current: Role::Investigator,
+    });
+    app.insert_resource(SessionState { started: true });
+    app.insert_resource(JournalState { open: false });
+    app.insert_resource(GhostTypeState {
+        selected: GhostType::Banshee,
+        active: GhostType::Banshee,
+    });
+    app.insert_resource(InvestigationState {
+        guess: Some(GhostType::Banshee),
+        confirmed: true,
+    });
+    app.insert_resource(ExorcismStatus {
+        state: crate::gameplay::exorcism::ExorcismState::Stage(1),
+        progress: 1.0 / 3.0,
+        stage: 1,
+        stacks: 0.0,
+        max_stacks: 3.0,
+    });
+    app.insert_resource(crate::gameplay::exorcism::tables::ExorcismTables::default());
+    app.insert_resource(BansheeSequence {
+        anchor_colors: vec![
+            BansheeNodeColor::Violet,
+            BansheeNodeColor::Amber,
+            BansheeNodeColor::Teal,
+        ],
+        order: vec![
+            BansheeNodeColor::Amber,
+            BansheeNodeColor::Teal,
+            BansheeNodeColor::Violet,
+        ],
+    });
+    app.insert_resource(EquipmentState {
+        active: Equipment::Emf,
+        emf_level: 0,
+        emf_dwell: 0.0,
+        emf_smoothed: 0.0,
+        emf_evidence_latch: 0.0,
+        spiritbox_message: "Silence...".to_string(),
+        spiritbox_cooldown: 0.0,
+    });
+    app.insert_resource(EvidenceState::default());
+
+    let body = app
+        .world_mut()
+        .spawn((
+            TextBundle::from_section("Placeholder", TextStyle::default()),
+            ObjectiveBodyText,
+        ))
+        .id();
+    let detail = app
+        .world_mut()
+        .spawn((
+            TextBundle::from_section("Placeholder", TextStyle::default()),
+            PuzzleDetailText,
+        ))
+        .id();
+
+    app.update();
+
+    let body_text = &app.world().entity(body).get::<Text>().unwrap().sections[0].value;
+    let detail_text = &app.world().entity(detail).get::<Text>().unwrap().sections[0].value;
+    assert!(body_text.contains("colored node"));
+    assert!(body_text.contains("changes each hunt"));
+    assert!(body_text.contains("0.6s"));
+    assert!(body_text.contains("3.5s"));
+    assert!(detail_text.contains("Next: Teal"));
+    assert!(detail_text.contains("Amber -> Teal -> Violet"));
+}
+
+#[test]
+fn banshee_sequence_accepts_second_correct_press_after_valid_delay() {
+    let mut app = App::new();
+    app.add_plugins(ExorcismPlugin);
+    app.insert_resource(MenuState {
+        open: false,
+        selected_role: Role::Investigator,
+    });
+    app.insert_resource(RoleState {
+        current: Role::Investigator,
+    });
+    app.insert_resource(JournalState { open: false });
+    app.insert_resource(GhostTypeState {
+        selected: GhostType::Banshee,
+        active: GhostType::Banshee,
+    });
+    app.insert_resource(GhostState {
+        position: Vec3::ZERO,
+    });
+    app.insert_resource(ButtonInput::<KeyCode>::default());
+    app.insert_resource(Time::<()>::default());
+    app.insert_resource(Assets::<Mesh>::default());
+    app.insert_resource(Assets::<StandardMaterial>::default());
+    app.insert_resource(HouseLayout {
+        bounds: Bounds {
+            min_x: -10.0,
+            max_x: 10.0,
+            min_z: -10.0,
+            max_z: 10.0,
+        },
+        obstacles: Vec::new(),
+        rooms: vec![RoomZone {
+            id: 0,
+            name: "Only Room",
+            bounds: Bounds {
+                min_x: -10.0,
+                max_x: 10.0,
+                min_z: -10.0,
+                max_z: 10.0,
+            },
+        }],
+        walls: Vec::new(),
+        exorcism: crate::gameplay::map::components::ExorcismLayout {
+            spirit_anchors: vec![Vec3::new(0.0, 0.7, 0.0)],
+            banshee_anchors: vec![
+                Vec3::new(-4.0, 0.5, 0.0),
+                Vec3::new(0.0, 0.5, 0.0),
+                Vec3::new(4.0, 0.5, 0.0),
+            ],
+            onryo_cursed_positions: vec![Vec3::new(0.0, 0.4, 0.0)],
+            onryo_ritual_positions: vec![Vec3::new(0.0, 0.1, 0.0)],
+        },
+        investigator_spawn: Vec3::new(-4.0, 0.9, 0.0),
+        investigator_spawns: Vec::new(),
+        ghost_spawns: vec![Vec3::new(6.0, 1.6, 0.0)],
+    });
+    app.world_mut().spawn((
+        Transform::from_xyz(-4.0, 0.9, 0.0),
+        GlobalTransform::default(),
+        crate::gameplay::investigator::Player,
+    ));
+
+    {
+        let mut investigation = app.world_mut().resource_mut::<InvestigationState>();
+        investigation.guess = Some(GhostType::Banshee);
+        investigation.confirmed = true;
+    }
+
+    app.update();
+    let sequence = app.world().resource::<BansheeSequence>().clone();
+    let anchor_position = |color: BansheeNodeColor| match color {
+        BansheeNodeColor::Violet => Vec3::new(-4.0, 0.9, 0.0),
+        BansheeNodeColor::Amber => Vec3::new(0.0, 0.9, 0.0),
+        BansheeNodeColor::Teal => Vec3::new(4.0, 0.9, 0.0),
+    };
+    {
+        let mut player = app
+            .world_mut()
+            .query_filtered::<&mut Transform, With<crate::gameplay::investigator::Player>>();
+        let mut transform = player.single_mut(app.world_mut());
+        transform.translation = anchor_position(sequence.order[0]);
+    }
+    {
+        let mut input = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
+        input.press(KeyCode::KeyF);
+    }
+    app.update();
+    {
+        let mut input = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
+        input.release(KeyCode::KeyF);
+    }
+    app.insert_resource(ButtonInput::<KeyCode>::default());
+
+    {
+        let status = app.world().resource::<ExorcismStatus>();
+        assert!(matches!(
+            status.state,
+            crate::gameplay::exorcism::ExorcismState::Stage(1)
+        ));
+    }
+
+    {
+        let mut player = app
+            .world_mut()
+            .query_filtered::<&mut Transform, With<crate::gameplay::investigator::Player>>();
+        let mut transform = player.single_mut(app.world_mut());
+        transform.translation = anchor_position(sequence.order[1]);
+    }
+    {
+        let mut time = app.world_mut().resource_mut::<Time>();
+        time.advance_by(std::time::Duration::from_secs_f32(1.0));
+    }
+    app.update();
+    app.insert_resource(ButtonInput::<KeyCode>::default());
+    {
+        let mut input = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
+        input.press(KeyCode::KeyF);
+    }
+    app.update();
+
+    let status = app.world().resource::<ExorcismStatus>();
+    assert!(
+        matches!(
+            status.state,
+            crate::gameplay::exorcism::ExorcismState::Stage(2)
+        ),
+        "unexpected banshee state after second press: {:?}",
+        status.state
+    );
+}
+
+#[test]
 fn spirit_puzzle_progress_builds_from_partial_anchor_coverage() {
     let mut app = App::new();
     app.add_plugins(ExorcismPlugin);
@@ -1308,11 +1524,13 @@ fn spirit_puzzle_progress_builds_from_partial_anchor_coverage() {
             onryo_ritual_positions: vec![Vec3::new(2.0, 0.1, 0.0)],
         },
         investigator_spawn: Vec3::new(0.0, 0.9, -2.0),
+        investigator_spawns: Vec::new(),
         ghost_spawns: vec![Vec3::new(0.0, 1.6, 2.0)],
     });
 
     app.world_mut().spawn(Camera3dBundle {
-        transform: Transform::from_xyz(0.0, 1.6, -4.0).looking_at(Vec3::new(0.0, 0.7, 0.0), Vec3::Y),
+        transform: Transform::from_xyz(0.0, 1.6, -4.0)
+            .looking_at(Vec3::new(0.0, 0.7, 0.0), Vec3::Y),
         ..default()
     });
 
@@ -1388,6 +1606,7 @@ fn spirit_puzzle_completes_when_two_anchors_are_maintained() {
             onryo_ritual_positions: vec![Vec3::new(2.0, 0.1, 0.0)],
         },
         investigator_spawn: Vec3::new(0.0, 0.9, -2.0),
+        investigator_spawns: Vec::new(),
         ghost_spawns: vec![Vec3::new(0.0, 1.6, 2.0)],
     });
 

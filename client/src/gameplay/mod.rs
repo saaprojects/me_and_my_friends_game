@@ -2,11 +2,11 @@ use crate::prelude::*;
 
 use crate::core::{JournalState, MenuState, RoleState, RoleYaw};
 
+pub mod evidence;
+pub mod exorcism;
 pub mod ghost;
 pub mod investigator;
 pub mod map;
-pub mod evidence;
-pub mod exorcism;
 
 pub struct GameplayPlugin;
 
@@ -18,8 +18,8 @@ impl Plugin for GameplayPlugin {
             investigator::InvestigatorPlugin,
             exorcism::ExorcismPlugin,
         ))
-            .init_resource::<evidence::EvidenceTuning>()
-            .add_systems(Update, (handle_role_toggle, update_mouse_look));
+        .init_resource::<evidence::EvidenceTuning>()
+        .add_systems(Update, (handle_role_toggle, update_mouse_look));
     }
 }
 

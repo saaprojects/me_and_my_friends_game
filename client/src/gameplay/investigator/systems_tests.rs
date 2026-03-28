@@ -17,7 +17,10 @@ fn investigator_faces_forward_with_pi_offset() {
         current: Role::Investigator,
     });
     app.insert_resource(JournalState { open: false });
-    app.insert_resource(CameraControl { yaw: 0.0, pitch: 0.0 });
+    app.insert_resource(CameraControl {
+        yaw: 0.0,
+        pitch: 0.0,
+    });
     app.insert_resource(CollisionWorld {
         bounds: Bounds {
             min_x: -10.0,
@@ -32,11 +35,7 @@ fn investigator_faces_forward_with_pi_offset() {
 
     let player = app
         .world_mut()
-        .spawn((
-            Transform::default(),
-            GlobalTransform::default(),
-            Player,
-        ))
+        .spawn((Transform::default(), GlobalTransform::default(), Player))
         .id();
 
     app.world_mut().spawn(Camera3dBundle::default());

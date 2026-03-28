@@ -10,7 +10,12 @@ fn spirit_emf_levels_ramp_with_distance() {
     let same_room = true;
     let tuning = EvidenceTuning::default();
     assert_eq!(
-        emf_level(GhostType::Spirit, tuning.emf_range_4 - 0.1, same_room, &tuning),
+        emf_level(
+            GhostType::Spirit,
+            tuning.emf_range_4 - 0.1,
+            same_room,
+            &tuning
+        ),
         4
     );
     assert_eq!(
@@ -18,15 +23,30 @@ fn spirit_emf_levels_ramp_with_distance() {
         4
     );
     assert_eq!(
-        emf_level(GhostType::Spirit, tuning.emf_range_4 + 0.2, same_room, &tuning),
+        emf_level(
+            GhostType::Spirit,
+            tuning.emf_range_4 + 0.2,
+            same_room,
+            &tuning
+        ),
         3
     );
     assert_eq!(
-        emf_level(GhostType::Spirit, tuning.emf_range_3 + 0.2, same_room, &tuning),
+        emf_level(
+            GhostType::Spirit,
+            tuning.emf_range_3 + 0.2,
+            same_room,
+            &tuning
+        ),
         2
     );
     assert_eq!(
-        emf_level(GhostType::Spirit, tuning.emf_range_2 + 0.6, same_room, &tuning),
+        emf_level(
+            GhostType::Spirit,
+            tuning.emf_range_2 + 0.6,
+            same_room,
+            &tuning
+        ),
         1
     );
 }
@@ -52,10 +72,22 @@ fn non_spirit_emf_is_one() {
 fn emf_five_candidate_requires_intersection() {
     let tuning = EvidenceTuning::default();
     let overlap = overlap_distance(&tuning);
-    assert!(emf_five_candidate(GhostType::Spirit, overlap - 0.1, &tuning));
+    assert!(emf_five_candidate(
+        GhostType::Spirit,
+        overlap - 0.1,
+        &tuning
+    ));
     assert!(emf_five_candidate(GhostType::Spirit, overlap, &tuning));
-    assert!(!emf_five_candidate(GhostType::Spirit, overlap + 0.1, &tuning));
-    assert!(!emf_five_candidate(GhostType::Banshee, overlap - 0.1, &tuning));
+    assert!(!emf_five_candidate(
+        GhostType::Spirit,
+        overlap + 0.1,
+        &tuning
+    ));
+    assert!(!emf_five_candidate(
+        GhostType::Banshee,
+        overlap - 0.1,
+        &tuning
+    ));
 }
 
 #[test]

@@ -13,18 +13,20 @@ fn test_world_with_divider() -> CollisionWorld {
             min_z: -9.4,
             max_z: 9.4,
         },
-        obstacles: vec![Obstacle {
-            min_x: 1.8,
-            max_x: 2.2,
-            min_z: -9.4,
-            max_z: -1.2,
-        },
-        Obstacle {
-            min_x: 1.8,
-            max_x: 2.2,
-            min_z: 1.2,
-            max_z: 9.4,
-        }],
+        obstacles: vec![
+            Obstacle {
+                min_x: 1.8,
+                max_x: 2.2,
+                min_z: -9.4,
+                max_z: -1.2,
+            },
+            Obstacle {
+                min_x: 1.8,
+                max_x: 2.2,
+                min_z: 1.2,
+                max_z: 9.4,
+            },
+        ],
     }
 }
 

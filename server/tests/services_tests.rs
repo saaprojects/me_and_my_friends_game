@@ -1,5 +1,5 @@
-use server::services::{health, ws};
 use server::services::ws::SocketAction;
+use server::services::{health, ws};
 
 #[test]
 fn health_is_ok() {

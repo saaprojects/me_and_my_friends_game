@@ -13,8 +13,7 @@ fn health_serializes() {
 fn client_message_roundtrip() {
     let msg = ClientMessage::Ping;
     let json = serde_json::to_string(&msg).expect("serialize client message");
-    let decoded: ClientMessage =
-        serde_json::from_str(&json).expect("deserialize client message");
+    let decoded: ClientMessage = serde_json::from_str(&json).expect("deserialize client message");
     assert!(matches!(decoded, ClientMessage::Ping));
 }
 
@@ -22,7 +21,6 @@ fn client_message_roundtrip() {
 fn server_message_roundtrip() {
     let msg = ServerMessage::Pong;
     let json = serde_json::to_string(&msg).expect("serialize server message");
-    let decoded: ServerMessage =
-        serde_json::from_str(&json).expect("deserialize server message");
+    let decoded: ServerMessage = serde_json::from_str(&json).expect("deserialize server message");
     assert!(matches!(decoded, ServerMessage::Pong));
 }

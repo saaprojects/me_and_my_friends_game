@@ -9,7 +9,7 @@ use crate::gameplay::ghost::GhostState;
 use crate::gameplay::investigator::tools::EvidenceState;
 use crate::gameplay::investigator::Player;
 use crate::gameplay::map::components::CollisionWorld;
-use crate::gameplay::map::systems::{investigator_spawn_position, random_ghost_spawn_position};
+use crate::gameplay::map::systems::random_round_start_positions;
 use crate::gameplay::map::{HouseLayout, HouseLayoutKind, HouseLayoutSelection};
 use crate::ui::{
     BansheeGhostButton, BeginHauntButton, BeginInvestigationButton, ExitButton, GhostDetailRoot,
@@ -666,9 +666,11 @@ pub fn handle_menu_interactions(
             let begin_haunt = begin_haunt_btn.is_some();
             let begin_investigation = begin_investigation_btn.is_some();
             if begin_haunt || begin_investigation {
+                let mut fresh_start_positions: Option<(Vec3, Vec3)> = None;
                 if let Some(ref mut selection) = house_selection {
                     selection.active_kind = selection.selected_kind;
                     let new_layout = HouseLayout::for_kind(selection.active_kind);
+                    fresh_start_positions = Some(new_layout.random_start_positions());
                     if let Some(ref mut collision) = collision_world {
                         **collision = new_layout.collision_world();
                     }
@@ -692,14 +694,13 @@ pub fn handle_menu_interactions(
                 *resolution = ResolutionState::default();
                 session.started = true;
                 set_default_camera(role.current, &mut control, &mut role_yaw);
-                let investigator_spawn = active_house_layout
-                    .as_ref()
-                    .map(|layout| layout.investigator_spawn)
-                    .unwrap_or_else(investigator_spawn_position);
-                let ghost_spawn = active_house_layout
-                    .as_ref()
-                    .map(|layout| layout.random_ghost_spawn())
-                    .unwrap_or_else(random_ghost_spawn_position);
+                let (investigator_spawn, ghost_spawn) = fresh_start_positions
+                    .or_else(|| {
+                        active_house_layout
+                            .as_ref()
+                            .map(|layout| layout.random_start_positions())
+                    })
+                    .unwrap_or_else(random_round_start_positions);
                 if let Ok(mut player_transform) = players.get_single_mut() {
                     player_transform.translation = investigator_spawn;
                     player_transform.rotation = Quat::IDENTITY;

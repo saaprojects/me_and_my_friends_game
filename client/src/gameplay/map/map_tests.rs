@@ -1,11 +1,12 @@
-use bevy::prelude::Vec3;
-use crate::gameplay::map::HouseLayout;
 use crate::gameplay::map::components::HouseLayoutSelection;
-use crate::gameplay::map::systems::{
-    avoid_camera_obstacles, collides, ghost_spawn_positions, investigator_spawn_position,
-    random_ghost_spawn_position, room_id, room_id_in_house, shortest_angle,
-};
 use crate::gameplay::map::components::Obstacle;
+use crate::gameplay::map::systems::{
+    avoid_camera_obstacles, collides, ghost_spawn_positions, investigator_spawn_positions,
+    random_ghost_spawn_position, random_investigator_spawn_position, random_round_start_positions,
+    room_id, room_id_in_house, shortest_angle,
+};
+use crate::gameplay::map::HouseLayout;
+use bevy::prelude::Vec3;
 
 #[test]
 fn room_id_quadrants() {
@@ -22,9 +23,10 @@ fn shortest_angle_wraps() {
 }
 
 #[test]
-fn investigator_spawns_in_main_room() {
-    let spawn = investigator_spawn_position();
-    assert_eq!(spawn, Vec3::new(-6.0, 0.9, 0.0));
+fn random_investigator_spawn_is_from_allowed_positions() {
+    let allowed = investigator_spawn_positions();
+    let spawn = random_investigator_spawn_position();
+    assert!(allowed.contains(&spawn));
 }
 
 #[test]
@@ -63,7 +65,11 @@ fn house_layout_defines_rooms_and_spawn_zones() {
     assert_eq!(layout.rooms[0].name, "Main Room");
     assert_eq!(layout.rooms[1].name, "Side Room");
 
-    assert!(layout.rooms[0].bounds.contains_xz(layout.investigator_spawn));
+    assert_eq!(layout.investigator_spawn, Vec3::new(-6.0, 0.9, 0.0));
+    assert!(layout.investigator_spawns.iter().all(|spawn| layout
+        .rooms
+        .iter()
+        .any(|room| room.bounds.contains_xz(*spawn))));
     assert!(layout
         .ghost_spawns
         .iter()
@@ -97,7 +103,10 @@ fn house_layout_contains_wall_visuals_for_outer_and_divider_walls() {
 fn room_lookup_uses_house_layout_rooms() {
     let layout = HouseLayout::two_room();
 
-    assert_eq!(room_id_in_house(&layout, Vec3::new(-5.0, 0.0, 0.0)), Some(0));
+    assert_eq!(
+        room_id_in_house(&layout, Vec3::new(-5.0, 0.0, 0.0)),
+        Some(0)
+    );
     assert_eq!(room_id_in_house(&layout, Vec3::new(5.0, 0.0, 0.0)), Some(1));
     assert_eq!(room_id_in_house(&layout, Vec3::new(2.0, 0.0, 5.0)), None);
 }
@@ -111,14 +120,29 @@ fn three_room_layout_adds_a_third_room_with_intentional_doorways() {
     assert_eq!(layout.rooms[1].name, "Upper Room");
     assert_eq!(layout.rooms[2].name, "Side Room");
     assert_eq!(layout.walls.len(), 8);
-    assert_eq!(layout.ghost_spawns.len(), 3);
+    assert_eq!(layout.investigator_spawns.len(), 4);
+    assert_eq!(layout.ghost_spawns.len(), 4);
 
-    assert_eq!(room_id_in_house(&layout, Vec3::new(-5.0, 0.0, -6.0)), Some(0));
-    assert_eq!(room_id_in_house(&layout, Vec3::new(-5.0, 0.0, 5.0)), Some(1));
+    assert_eq!(
+        room_id_in_house(&layout, Vec3::new(-5.0, 0.0, -6.0)),
+        Some(0)
+    );
+    assert_eq!(
+        room_id_in_house(&layout, Vec3::new(-5.0, 0.0, 5.0)),
+        Some(1)
+    );
     assert_eq!(room_id_in_house(&layout, Vec3::new(5.0, 0.0, 0.0)), Some(2));
 
-    assert!(collides(Vec3::new(-5.7, 0.0, -2.0), 0.35, &layout.obstacles));
-    assert!(!collides(Vec3::new(-1.0, 0.0, -2.0), 0.35, &layout.obstacles));
+    assert!(collides(
+        Vec3::new(-5.7, 0.0, -2.0),
+        0.35,
+        &layout.obstacles
+    ));
+    assert!(!collides(
+        Vec3::new(-1.0, 0.0, -2.0),
+        0.35,
+        &layout.obstacles
+    ));
     assert!(!collides(Vec3::new(2.0, 0.0, 0.0), 0.35, &layout.obstacles));
     assert!(layout
         .walls
@@ -131,10 +155,24 @@ fn three_room_layout_adds_a_third_room_with_intentional_doorways() {
 }
 
 #[test]
+fn random_round_starts_keep_investigator_and_ghost_apart() {
+    let (investigator, ghost) = random_round_start_positions();
+    let delta = investigator - ghost;
+    let separation_sq = delta.x * delta.x + delta.z * delta.z;
+    assert!(separation_sq >= 1.0);
+}
+
+#[test]
 fn house_layout_selection_defaults_to_two_room() {
     let selection = HouseLayoutSelection::default();
-    assert_eq!(selection.selected_kind, crate::gameplay::map::HouseLayoutKind::TwoRoom);
-    assert_eq!(selection.active_kind, crate::gameplay::map::HouseLayoutKind::TwoRoom);
+    assert_eq!(
+        selection.selected_kind,
+        crate::gameplay::map::HouseLayoutKind::TwoRoom
+    );
+    assert_eq!(
+        selection.active_kind,
+        crate::gameplay::map::HouseLayoutKind::TwoRoom
+    );
 }
 
 #[test]
