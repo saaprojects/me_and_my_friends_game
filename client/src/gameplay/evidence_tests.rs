@@ -97,7 +97,7 @@ fn spiritbox_replies_directionally_for_banshee_contact() {
         spiritbox_reply(
             GhostType::Banshee,
             true,
-            tuning.spiritbox_range - 0.1,
+            tuning.spiritbox_here_range - 0.1,
             &tuning,
             SpiritboxBearing::Ahead
         ),
@@ -107,7 +107,17 @@ fn spiritbox_replies_directionally_for_banshee_contact() {
         spiritbox_reply(
             GhostType::Banshee,
             true,
-            tuning.spiritbox_range - 0.1,
+            tuning.spiritbox_here_range + 1.0,
+            &tuning,
+            SpiritboxBearing::Ahead
+        ),
+        SpiritboxReply::Ahead
+    );
+    assert_eq!(
+        spiritbox_reply(
+            GhostType::Banshee,
+            true,
+            tuning.spiritbox_here_range + 4.0,
             &tuning,
             SpiritboxBearing::Left
         ),
@@ -117,7 +127,7 @@ fn spiritbox_replies_directionally_for_banshee_contact() {
         spiritbox_reply(
             GhostType::Banshee,
             true,
-            tuning.spiritbox_range - 0.1,
+            tuning.spiritbox_here_range + 4.0,
             &tuning,
             SpiritboxBearing::Right
         ),
@@ -127,7 +137,7 @@ fn spiritbox_replies_directionally_for_banshee_contact() {
         spiritbox_reply(
             GhostType::Banshee,
             true,
-            tuning.spiritbox_range - 0.1,
+            tuning.spiritbox_here_range + 4.0,
             &tuning,
             SpiritboxBearing::Behind
         ),
@@ -136,23 +146,13 @@ fn spiritbox_replies_directionally_for_banshee_contact() {
 }
 
 #[test]
-fn spiritbox_requires_banshee_same_room_and_range() {
+fn spiritbox_requires_banshee_and_same_room() {
     let tuning = EvidenceTuning::default();
     assert_eq!(
         spiritbox_reply(
             GhostType::Banshee,
             false,
-            tuning.spiritbox_range - 0.1,
-            &tuning,
-            SpiritboxBearing::Ahead
-        ),
-        SpiritboxReply::Static
-    );
-    assert_eq!(
-        spiritbox_reply(
-            GhostType::Banshee,
-            true,
-            tuning.spiritbox_range + 0.1,
+            tuning.spiritbox_here_range + 6.0,
             &tuning,
             SpiritboxBearing::Ahead
         ),
@@ -162,7 +162,7 @@ fn spiritbox_requires_banshee_same_room_and_range() {
         spiritbox_reply(
             GhostType::Spirit,
             true,
-            tuning.spiritbox_range - 0.1,
+            tuning.spiritbox_here_range + 1.0,
             &tuning,
             SpiritboxBearing::Ahead
         ),
@@ -172,7 +172,7 @@ fn spiritbox_requires_banshee_same_room_and_range() {
         spiritbox_reply(
             GhostType::Onryo,
             true,
-            tuning.spiritbox_range - 0.1,
+            tuning.spiritbox_here_range + 1.0,
             &tuning,
             SpiritboxBearing::Ahead
         ),
@@ -206,6 +206,7 @@ fn spiritbox_bearing_tracks_relative_direction() {
 #[test]
 fn spiritbox_evidence_only_for_actual_replies() {
     assert!(spiritbox_is_evidence(SpiritboxReply::Here));
+    assert!(spiritbox_is_evidence(SpiritboxReply::Ahead));
     assert!(spiritbox_is_evidence(SpiritboxReply::Left));
     assert!(spiritbox_is_evidence(SpiritboxReply::Right));
     assert!(spiritbox_is_evidence(SpiritboxReply::Behind));

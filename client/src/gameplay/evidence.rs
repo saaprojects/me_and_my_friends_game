@@ -5,6 +5,7 @@ use bevy::prelude::{Resource, Vec3};
 pub enum SpiritboxReply {
     Static,
     Here,
+    Ahead,
     Left,
     Right,
     Behind,
@@ -35,7 +36,7 @@ pub struct EvidenceTuning {
     pub emf_jitter_f2: f32,
     pub emf_evidence_latch: f32,
     pub emf_jitter_phase: f32,
-    pub spiritbox_range: f32,
+    pub spiritbox_here_range: f32,
     pub spiritbox_cooldown_hit: f32,
     pub spiritbox_cooldown_miss: f32,
 }
@@ -58,7 +59,7 @@ impl Default for EvidenceTuning {
             emf_jitter_f2: 9.1,
             emf_evidence_latch: 1.2,
             emf_jitter_phase: 0.0,
-            spiritbox_range: 5.5,
+            spiritbox_here_range: 2.2,
             spiritbox_cooldown_hit: 1.6,
             spiritbox_cooldown_miss: 1.2,
         }
@@ -133,12 +134,18 @@ pub fn spiritbox_reply(
     tuning: &EvidenceTuning,
     bearing: SpiritboxBearing,
 ) -> SpiritboxReply {
-    if ghost_type != GhostType::Banshee || !same_room || distance > tuning.spiritbox_range {
+    if ghost_type != GhostType::Banshee || !same_room {
         return SpiritboxReply::Static;
     }
 
     match bearing {
-        SpiritboxBearing::Ahead => SpiritboxReply::Here,
+        SpiritboxBearing::Ahead => {
+            if distance <= tuning.spiritbox_here_range {
+                SpiritboxReply::Here
+            } else {
+                SpiritboxReply::Ahead
+            }
+        }
         SpiritboxBearing::Left => SpiritboxReply::Left,
         SpiritboxBearing::Right => SpiritboxReply::Right,
         SpiritboxBearing::Behind => SpiritboxReply::Behind,
@@ -154,6 +161,7 @@ impl SpiritboxReply {
         match self {
             SpiritboxReply::Static => "Static...",
             SpiritboxReply::Here => "Right... here.",
+            SpiritboxReply::Ahead => "Ahead of you...",
             SpiritboxReply::Left => "To your left...",
             SpiritboxReply::Right => "To your right...",
             SpiritboxReply::Behind => "Behind you...",

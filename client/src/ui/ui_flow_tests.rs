@@ -924,6 +924,90 @@ fn spiritbox_gives_directional_banshee_reply_in_same_room() {
 
     let equipment = app.world().resource::<EquipmentState>();
     let evidence = app.world().resource::<EvidenceState>();
+    assert_eq!(equipment.spiritbox_message, "Ahead of you...");
+    assert!(evidence.spiritbox_response);
+}
+
+#[test]
+fn spiritbox_says_here_only_when_banshee_is_actually_close() {
+    let mut app = App::new();
+    app.add_systems(Update, handle_spiritbox);
+    app.insert_resource(MenuState {
+        open: false,
+        selected_role: Role::Investigator,
+    });
+    app.insert_resource(RoleState {
+        current: Role::Investigator,
+    });
+    app.insert_resource(JournalState { open: false });
+    app.insert_resource(GhostTypeState {
+        selected: GhostType::Banshee,
+        active: GhostType::Banshee,
+    });
+    app.insert_resource(GhostState {
+        position: Vec3::new(1.4, 0.0, 0.0),
+    });
+    app.insert_resource(CameraControl {
+        yaw: -std::f32::consts::FRAC_PI_2,
+        pitch: 0.0,
+    });
+    app.insert_resource(Time::<()>::default());
+    app.insert_resource(ButtonInput::<KeyCode>::default());
+    app.insert_resource(EquipmentState {
+        active: Equipment::Spiritbox,
+        emf_level: 0,
+        emf_dwell: 0.0,
+        emf_smoothed: 0.0,
+        emf_evidence_latch: 0.0,
+        spiritbox_message: "Silence...".to_string(),
+        spiritbox_cooldown: 0.0,
+    });
+    app.insert_resource(EvidenceState::default());
+    app.insert_resource(EvidenceTuning::default());
+    app.insert_resource(HouseLayout {
+        bounds: Bounds {
+            min_x: -10.0,
+            max_x: 10.0,
+            min_z: -10.0,
+            max_z: 10.0,
+        },
+        obstacles: Vec::new(),
+        rooms: vec![RoomZone {
+            id: 0,
+            name: "Only Room",
+            bounds: Bounds {
+                min_x: -10.0,
+                max_x: 10.0,
+                min_z: -10.0,
+                max_z: 10.0,
+            },
+        }],
+        walls: Vec::new(),
+        exorcism: crate::gameplay::map::components::ExorcismLayout {
+            spirit_anchors: vec![Vec3::new(0.0, 0.7, 0.0)],
+            banshee_anchors: vec![Vec3::new(0.0, 0.5, 0.0)],
+            onryo_cursed_positions: vec![Vec3::new(0.0, 0.4, 0.0)],
+            onryo_ritual_positions: vec![Vec3::new(0.0, 0.1, 0.0)],
+        },
+        investigator_spawn: Vec3::ZERO,
+        investigator_spawns: Vec::new(),
+        ghost_spawns: vec![Vec3::new(1.4, 1.6, 0.0)],
+    });
+
+    app.world_mut().spawn((
+        Transform::from_xyz(0.0, 0.0, 0.0),
+        GlobalTransform::default(),
+        crate::gameplay::investigator::Player,
+    ));
+
+    {
+        let mut input = app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
+        input.press(KeyCode::KeyE);
+    }
+    app.update();
+
+    let equipment = app.world().resource::<EquipmentState>();
+    let evidence = app.world().resource::<EvidenceState>();
     assert_eq!(equipment.spiritbox_message, "Right... here.");
     assert!(evidence.spiritbox_response);
 }
