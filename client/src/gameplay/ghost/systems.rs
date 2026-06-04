@@ -1,16 +1,21 @@
 use crate::prelude::*;
 
-use crate::core::{MenuState, RoleState};
-use crate::gameplay::ghost::{GhostMarker, GhostState};
+use crate::core::{InputMap, MenuState, MovementConfig, RoleState};
+use crate::gameplay::ghost::{GhostBobState, GhostMarker, GhostState, GhostVelocity};
 use crate::gameplay::map::components::CollisionWorld;
 use crate::gameplay::map::systems::move_with_collisions;
+use crate::gameplay::{is_sprinting, read_movement_direction};
 
 pub fn ghost_movement_system(
     time: Res<Time>,
     keys: Res<ButtonInput<KeyCode>>,
     role: Res<RoleState>,
     menu: Res<MenuState>,
+    input: Res<InputMap>,
+    movement_cfg: Res<MovementConfig>,
     mut ghost: ResMut<GhostState>,
+    mut ghost_vel: ResMut<GhostVelocity>,
+    mut bob: ResMut<GhostBobState>,
     control: Res<CameraControl>,
     world: Res<CollisionWorld>,
     mut camera_query: Query<&mut Transform, (With<Camera>, Without<GhostMarker>)>,
@@ -20,39 +25,41 @@ pub fn ghost_movement_system(
     }
 
     let delta = time.delta_seconds();
-    let speed = 5.2;
-    let sprint = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
-    let speed = if sprint { speed * 1.6 } else { speed };
+    let sprinting = is_sprinting(&keys, &input);
+    let base_speed = movement_cfg.ghost_speed;
+    let speed = if sprinting {
+        base_speed * movement_cfg.ghost_sprint_mul
+    } else {
+        base_speed
+    };
 
-    let forward = Vec3::new(control.yaw.sin(), 0.0, control.yaw.cos());
-    let right = Vec3::new(-forward.z, 0.0, forward.x);
+    let dir = read_movement_direction(&keys, &control, &input);
+    let moving = dir.length_squared() > 0.01;
 
-    let mut movement = Vec3::ZERO;
-    if keys.pressed(KeyCode::KeyW) || keys.pressed(KeyCode::ArrowUp) {
-        movement += forward;
-    }
-    if keys.pressed(KeyCode::KeyS) || keys.pressed(KeyCode::ArrowDown) {
-        movement -= forward;
-    }
-    if keys.pressed(KeyCode::KeyA) || keys.pressed(KeyCode::ArrowLeft) {
-        movement -= right;
-    }
-    if keys.pressed(KeyCode::KeyD) || keys.pressed(KeyCode::ArrowRight) {
-        movement += right;
-    }
-
-    if movement.length_squared() > 0.0 {
-        movement = movement.normalize() * speed * delta;
-    }
+    let target_vel = dir * speed;
+    let accel = if moving { 10.0 } else { 8.0 };
+    ghost_vel.0 = ghost_vel.0.lerp(target_vel, (delta * accel).min(1.0));
 
     move_with_collisions(
         &mut ghost.position,
-        movement,
+        ghost_vel.0 * delta,
         0.35,
         world.bounds,
         &world.obstacles,
         true,
     );
+
+    let bob_speed = if sprinting { 8.0 } else { 5.5 };
+    bob.magnitude = if moving {
+        (bob.magnitude + delta * 5.0).min(1.0)
+    } else {
+        (bob.magnitude - delta * 6.0).max(0.0)
+    };
+    if moving {
+        bob.phase += delta * bob_speed;
+    }
+    let bob_y = bob.phase.sin() * 0.055 * bob.magnitude
+        + (bob.phase * 2.0).sin().abs() * 0.018 * bob.magnitude;
 
     let forward3d = Vec3::new(
         control.yaw.sin() * control.pitch.cos(),
@@ -60,9 +67,9 @@ pub fn ghost_movement_system(
         control.yaw.cos() * control.pitch.cos(),
     );
     if let Ok(mut camera) = camera_query.get_single_mut() {
-        camera.translation = ghost.position;
-        camera.translation.y = 1.6;
-        camera.look_at(ghost.position + forward3d, Vec3::Y);
+        let eye = Vec3::new(ghost.position.x, 1.6 + bob_y, ghost.position.z);
+        camera.translation = eye;
+        camera.look_at(eye + forward3d, Vec3::Y);
     }
 }
 

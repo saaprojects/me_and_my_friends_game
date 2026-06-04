@@ -4,19 +4,17 @@ use crate::core::{
     GhostTypeState, JournalState, MenuFlowState, MenuScreen, MenuState, ResolutionState, Role,
     RoleState, RoleYaw, RoundOutcome, SessionState,
 };
-use crate::gameplay::exorcism::{ExorcismState, ExorcismStatus, InvestigationState, PuzzleSpawned};
+use crate::core::GameRng;
+use crate::gameplay::exorcism::{ExorcismState, ExorcismStatus, InvestigationState, PuzzleSpawned, RoomLights};
 use crate::gameplay::ghost::GhostState;
-use crate::gameplay::investigator::tools::EvidenceState;
+use crate::gameplay::investigator::tools::{EquipmentState, EvidenceState};
 use crate::gameplay::investigator::Player;
 use crate::gameplay::map::components::CollisionWorld;
 use crate::gameplay::map::systems::random_round_start_positions;
 use crate::gameplay::map::{HouseLayout, HouseLayoutKind, HouseLayoutSelection};
 use crate::ui::{
-    BansheeGhostButton, BeginHauntButton, BeginInvestigationButton, ExitButton, GhostDetailRoot,
-    GhostSelectButton, InvestigatorDetailRoot, InvestigatorSelectButton, OnryoGhostButton,
-    ResolutionBodyText, ResolutionContinueButton, ResolutionRoot, ResolutionTitleText,
-    RoleSelectRoot, SpiritGhostButton, StartScreenButton, StartScreenRoot, ThreeRoomCountButton,
-    TwoRoomCountButton,
+    ButtonAnimT, ButtonKind, GhostDetailRoot, InvestigatorDetailRoot, ResolutionBodyText,
+    ResolutionRoot, ResolutionTitleText, RoleSelectRoot, StartScreenRoot,
 };
 
 pub fn setup_menu(mut commands: Commands) {
@@ -71,7 +69,7 @@ pub fn setup_menu(mut commands: Commands) {
                         background_color: primary_button,
                         ..default()
                     },
-                    StartScreenButton,
+                    ButtonKind::StartScreen,
                 ))
                 .with_children(|button| {
                     button.spawn(TextBundle::from_section(
@@ -140,7 +138,8 @@ pub fn setup_menu(mut commands: Commands) {
                             background_color: ghost_panel,
                             ..default()
                         },
-                        GhostSelectButton,
+                        ButtonKind::GhostSelect,
+                        ButtonAnimT::default(),
                     ))
                     .with_children(|column| {
                         column.spawn(TextBundle::from_section(
@@ -175,7 +174,8 @@ pub fn setup_menu(mut commands: Commands) {
                             background_color: investigator_panel,
                             ..default()
                         },
-                        InvestigatorSelectButton,
+                        ButtonKind::InvestigatorSelect,
+                        ButtonAnimT::default(),
                     ))
                     .with_children(|column| {
                         column.spawn(TextBundle::from_section(
@@ -207,7 +207,7 @@ pub fn setup_menu(mut commands: Commands) {
                         background_color: BackgroundColor(Color::srgba(0.6, 0.2, 0.2, 0.95)),
                         ..default()
                     },
-                    ExitButton,
+                    ButtonKind::Exit,
                 ))
                 .with_children(|button| {
                     button.spawn(TextBundle::from_section(
@@ -262,7 +262,7 @@ pub fn setup_menu(mut commands: Commands) {
                         background_color: button_color,
                         ..default()
                     },
-                    SpiritGhostButton,
+                    ButtonKind::SpiritGhost,
                 ))
                 .with_children(|button| {
                     button.spawn(TextBundle::from_section(
@@ -282,7 +282,7 @@ pub fn setup_menu(mut commands: Commands) {
                         background_color: button_color,
                         ..default()
                     },
-                    BansheeGhostButton,
+                    ButtonKind::BansheeGhost,
                 ))
                 .with_children(|button| {
                     button.spawn(TextBundle::from_section(
@@ -302,7 +302,7 @@ pub fn setup_menu(mut commands: Commands) {
                         background_color: button_color,
                         ..default()
                     },
-                    OnryoGhostButton,
+                    ButtonKind::OnryoGhost,
                 ))
                 .with_children(|button| {
                     button.spawn(TextBundle::from_section(
@@ -344,7 +344,7 @@ pub fn setup_menu(mut commands: Commands) {
                             background_color: button_color,
                             ..default()
                         },
-                        TwoRoomCountButton,
+                        ButtonKind::TwoRoomCount,
                     ))
                     .with_children(|button| {
                         button.spawn(TextBundle::from_section(
@@ -366,7 +366,7 @@ pub fn setup_menu(mut commands: Commands) {
                             background_color: button_color,
                             ..default()
                         },
-                        ThreeRoomCountButton,
+                        ButtonKind::ThreeRoomCount,
                     ))
                     .with_children(|button| {
                         button.spawn(TextBundle::from_section(
@@ -391,7 +391,7 @@ pub fn setup_menu(mut commands: Commands) {
                         background_color: primary_button,
                         ..default()
                     },
-                    BeginHauntButton,
+                    ButtonKind::BeginHaunt,
                 ))
                 .with_children(|button| {
                     button.spawn(TextBundle::from_section(
@@ -451,7 +451,7 @@ pub fn setup_menu(mut commands: Commands) {
                         background_color: primary_button,
                         ..default()
                     },
-                    BeginInvestigationButton,
+                    ButtonKind::BeginInvestigation,
                 ))
                 .with_children(|button| {
                     button.spawn(TextBundle::from_section(
@@ -525,7 +525,7 @@ pub fn setup_menu(mut commands: Commands) {
                         background_color: primary_button,
                         ..default()
                     },
-                    ResolutionContinueButton,
+                    ButtonKind::ResolutionContinue,
                 ))
                 .with_children(|button| {
                     button.spawn(TextBundle::from_section(
@@ -546,8 +546,9 @@ pub fn handle_menu_toggle(
     mut journal: ResMut<JournalState>,
     mut flow: ResMut<MenuFlowState>,
     session: Res<SessionState>,
+    input: Res<crate::core::InputMap>,
 ) {
-    if keys.just_pressed(KeyCode::Escape) {
+    if keys.just_pressed(input.menu_toggle) {
         if menu.open
             && matches!(
                 flow.screen,
@@ -569,21 +570,7 @@ pub fn handle_menu_toggle(
 
 pub fn handle_menu_interactions(
     mut interactions: Query<
-        (
-            &Interaction,
-            &mut BackgroundColor,
-            Option<&StartScreenButton>,
-            Option<&GhostSelectButton>,
-            Option<&InvestigatorSelectButton>,
-            Option<&SpiritGhostButton>,
-            Option<&BansheeGhostButton>,
-            Option<&OnryoGhostButton>,
-            Option<&TwoRoomCountButton>,
-            Option<&ThreeRoomCountButton>,
-            Option<&BeginHauntButton>,
-            Option<&BeginInvestigationButton>,
-            Option<&ExitButton>,
-        ),
+        (&Interaction, &mut BackgroundColor, &ButtonKind),
         (Changed<Interaction>, With<Button>),
     >,
     mut menu: ResMut<MenuState>,
@@ -593,10 +580,13 @@ pub fn handle_menu_interactions(
     mut ghost_type: ResMut<GhostTypeState>,
     round_resources: (
         ResMut<EvidenceState>,
+        ResMut<EquipmentState>,
         ResMut<PuzzleSpawned>,
         ResMut<InvestigationState>,
         ResMut<ResolutionState>,
         ResMut<SessionState>,
+        ResMut<RoomLights>,
+        ResMut<GameRng>,
     ),
     mut control: ResMut<crate::core::CameraControl>,
     mut journal: ResMut<JournalState>,
@@ -609,68 +599,50 @@ pub fn handle_menu_interactions(
     mut players: Query<&mut Transform, With<Player>>,
     mut exit_events: EventWriter<AppExit>,
 ) {
-    let (mut evidence, mut puzzle_spawned, mut investigation, mut resolution, mut session) =
+    let (mut evidence, mut equipment, mut puzzle_spawned, mut investigation, mut resolution, mut session, mut lights, mut rng) =
         round_resources;
     let (mut active_house_layout, mut collision_world, mut house_selection) = layout_resources;
 
-    for (
-        interaction,
-        mut color,
-        start_screen_btn,
-        ghost_btn,
-        investigator_btn,
-        spirit_btn,
-        banshee_btn,
-        onryo_btn,
-        two_room_btn,
-        three_room_btn,
-        begin_haunt_btn,
-        begin_investigation_btn,
-        exit_btn,
-    ) in interactions.iter_mut()
-    {
+    for (interaction, mut color, kind) in interactions.iter_mut() {
         if let Interaction::Pressed = interaction {
-            if start_screen_btn.is_some() {
-                flow.screen = MenuScreen::RoleSelect;
-            }
-            if ghost_btn.is_some() {
-                menu.selected_role = Role::Ghost;
-                flow.screen = MenuScreen::GhostDetails;
-            }
-            if investigator_btn.is_some() {
-                menu.selected_role = Role::Investigator;
-                flow.screen = MenuScreen::InvestigatorDetails;
-            }
-            if spirit_btn.is_some() {
-                ghost_type.selected = GhostType::Spirit;
-            }
-            if banshee_btn.is_some() {
-                ghost_type.selected = GhostType::Banshee;
-            }
-            if onryo_btn.is_some() {
-                ghost_type.selected = GhostType::Onryo;
-            }
-            if flow.screen == MenuScreen::GhostDetails {
-                if two_room_btn.is_some() {
-                    if let Some(ref mut selection) = house_selection {
-                        selection.selected_kind = HouseLayoutKind::TwoRoom;
+            match kind {
+                ButtonKind::StartScreen => { flow.screen = MenuScreen::RoleSelect; }
+                ButtonKind::GhostSelect => {
+                    menu.selected_role = Role::Ghost;
+                    flow.screen = MenuScreen::GhostDetails;
+                }
+                ButtonKind::InvestigatorSelect => {
+                    menu.selected_role = Role::Investigator;
+                    flow.screen = MenuScreen::InvestigatorDetails;
+                }
+                ButtonKind::SpiritGhost => { ghost_type.selected = GhostType::Spirit; }
+                ButtonKind::BansheeGhost => { ghost_type.selected = GhostType::Banshee; }
+                ButtonKind::OnryoGhost => { ghost_type.selected = GhostType::Onryo; }
+                ButtonKind::TwoRoomCount => {
+                    if flow.screen == MenuScreen::GhostDetails {
+                        if let Some(ref mut selection) = house_selection {
+                            selection.selected_kind = HouseLayoutKind::TwoRoom;
+                        }
                     }
                 }
-                if three_room_btn.is_some() {
-                    if let Some(ref mut selection) = house_selection {
-                        selection.selected_kind = HouseLayoutKind::ThreeRoom;
+                ButtonKind::ThreeRoomCount => {
+                    if flow.screen == MenuScreen::GhostDetails {
+                        if let Some(ref mut selection) = house_selection {
+                            selection.selected_kind = HouseLayoutKind::ThreeRoom;
+                        }
                     }
                 }
+                _ => {}
             }
 
-            let begin_haunt = begin_haunt_btn.is_some();
-            let begin_investigation = begin_investigation_btn.is_some();
+            let begin_haunt = *kind == ButtonKind::BeginHaunt;
+            let begin_investigation = *kind == ButtonKind::BeginInvestigation;
             if begin_haunt || begin_investigation {
                 let mut fresh_start_positions: Option<(Vec3, Vec3)> = None;
                 if let Some(ref mut selection) = house_selection {
                     selection.active_kind = selection.selected_kind;
                     let new_layout = HouseLayout::for_kind(selection.active_kind);
-                    fresh_start_positions = Some(new_layout.random_start_positions());
+                    fresh_start_positions = Some(new_layout.random_start_positions(&mut rng));
                     if let Some(ref mut collision) = collision_world {
                         **collision = new_layout.collision_world();
                     }
@@ -688,17 +660,19 @@ pub fn handle_menu_interactions(
                 }
                 ghost_type.active = ghost_type.selected;
                 *evidence = EvidenceState::default();
+                *equipment = EquipmentState::default();
                 puzzle_spawned.0 = false;
                 investigation.guess = None;
                 investigation.confirmed = false;
                 *resolution = ResolutionState::default();
+                lights.reset(active_house_layout.as_deref());
                 session.started = true;
                 set_default_camera(role.current, &mut control, &mut role_yaw);
                 let (investigator_spawn, ghost_spawn) = fresh_start_positions
                     .or_else(|| {
                         active_house_layout
                             .as_ref()
-                            .map(|layout| layout.random_start_positions())
+                            .map(|layout| layout.random_start_positions(&mut rng))
                     })
                     .unwrap_or_else(random_round_start_positions);
                 if let Ok(mut player_transform) = players.get_single_mut() {
@@ -713,7 +687,7 @@ pub fn handle_menu_interactions(
                 flow.screen = MenuScreen::RoleSelect;
             }
 
-            if exit_btn.is_some() {
+            if *kind == ButtonKind::Exit {
                 exit_events.send(AppExit::Success);
             }
 
@@ -724,17 +698,13 @@ pub fn handle_menu_interactions(
 
 pub fn handle_resolution_interactions(
     mut interactions: Query<
-        &Interaction,
-        (
-            Changed<Interaction>,
-            With<Button>,
-            With<ResolutionContinueButton>,
-        ),
+        (&Interaction, &ButtonKind),
+        (Changed<Interaction>, With<Button>),
     >,
     mut flow: ResMut<MenuFlowState>,
 ) {
-    for interaction in interactions.iter_mut() {
-        if *interaction == Interaction::Pressed {
+    for (interaction, kind) in interactions.iter_mut() {
+        if *kind == ButtonKind::ResolutionContinue && *interaction == Interaction::Pressed {
             flow.screen = MenuScreen::RoleSelect;
         }
     }
@@ -889,16 +859,7 @@ pub fn sync_menu_styles(
     flow: Res<MenuFlowState>,
     ghost_type: Res<GhostTypeState>,
     house_selection: Option<Res<HouseLayoutSelection>>,
-    mut buttons: Query<(
-        &mut BackgroundColor,
-        Option<&GhostSelectButton>,
-        Option<&InvestigatorSelectButton>,
-        Option<&SpiritGhostButton>,
-        Option<&BansheeGhostButton>,
-        Option<&OnryoGhostButton>,
-        Option<&TwoRoomCountButton>,
-        Option<&ThreeRoomCountButton>,
-    )>,
+    mut buttons: Query<(&mut BackgroundColor, &ButtonKind)>,
 ) {
     let selected_color = BackgroundColor(Color::srgba(0.2, 0.45, 0.95, 0.95));
     let idle_color = BackgroundColor(Color::srgba(0.2, 0.25, 0.4, 0.9));
@@ -908,93 +869,58 @@ pub fn sync_menu_styles(
         .map(|selection| selection.selected_kind)
         .unwrap_or(HouseLayoutKind::TwoRoom);
 
-    for (
-        mut color,
-        ghost_btn,
-        investigator_btn,
-        spirit_btn,
-        banshee_btn,
-        onryo_btn,
-        two_room_btn,
-        three_room_btn,
-    ) in buttons.iter_mut()
-    {
-        if ghost_btn.is_some() {
-            if flow.screen == MenuScreen::RoleSelect {
-                continue;
+    for (mut color, kind) in buttons.iter_mut() {
+        match kind {
+            ButtonKind::GhostSelect => {
+                if flow.screen == MenuScreen::RoleSelect { continue; }
+                *color = if menu.selected_role == Role::Ghost { selected_color } else { idle_color };
             }
-            *color = if menu.selected_role == Role::Ghost {
-                selected_color
-            } else {
-                idle_color
-            };
-        } else if investigator_btn.is_some() {
-            if flow.screen == MenuScreen::RoleSelect {
-                continue;
+            ButtonKind::InvestigatorSelect => {
+                if flow.screen == MenuScreen::RoleSelect { continue; }
+                *color = if menu.selected_role == Role::Investigator { selected_color } else { idle_color };
             }
-            *color = if menu.selected_role == Role::Investigator {
-                selected_color
-            } else {
-                idle_color
-            };
-        } else if spirit_btn.is_some() {
-            *color = if ghost_type.selected == GhostType::Spirit {
-                selected_color
-            } else {
-                idle_color
-            };
-        } else if banshee_btn.is_some() {
-            *color = if ghost_type.selected == GhostType::Banshee {
-                selected_color
-            } else {
-                idle_color
-            };
-        } else if onryo_btn.is_some() {
-            *color = if ghost_type.selected == GhostType::Onryo {
-                selected_color
-            } else {
-                idle_color
-            };
-        } else if two_room_btn.is_some() {
-            *color = if selected_rooms == HouseLayoutKind::TwoRoom {
-                selected_color
-            } else {
-                idle_color
-            };
-        } else if three_room_btn.is_some() {
-            *color = if selected_rooms == HouseLayoutKind::ThreeRoom {
-                selected_color
-            } else {
-                idle_color
-            };
+            ButtonKind::SpiritGhost => {
+                *color = if ghost_type.selected == GhostType::Spirit { selected_color } else { idle_color };
+            }
+            ButtonKind::BansheeGhost => {
+                *color = if ghost_type.selected == GhostType::Banshee { selected_color } else { idle_color };
+            }
+            ButtonKind::OnryoGhost => {
+                *color = if ghost_type.selected == GhostType::Onryo { selected_color } else { idle_color };
+            }
+            ButtonKind::TwoRoomCount => {
+                *color = if selected_rooms == HouseLayoutKind::TwoRoom { selected_color } else { idle_color };
+            }
+            ButtonKind::ThreeRoomCount => {
+                *color = if selected_rooms == HouseLayoutKind::ThreeRoom { selected_color } else { idle_color };
+            }
+            _ => {}
         }
     }
 }
 
 pub fn sync_role_select_hover(
+    time: Res<Time>,
     menu: Res<MenuState>,
     flow: Res<MenuFlowState>,
-    mut buttons: Query<(
-        &Interaction,
-        &mut BackgroundColor,
-        Option<&GhostSelectButton>,
-        Option<&InvestigatorSelectButton>,
-    )>,
+    mut buttons: Query<(&Interaction, &mut BackgroundColor, &ButtonKind, &mut ButtonAnimT)>,
 ) {
     if !menu.open || flow.screen != MenuScreen::RoleSelect {
         return;
     }
 
-    let hover_color = BackgroundColor(Color::srgba(0.2, 0.45, 0.95, 0.95));
-    let idle_color = BackgroundColor(Color::srgba(0.08, 0.1, 0.16, 0.92));
-
-    for (interaction, mut color, ghost_btn, investigator_btn) in buttons.iter_mut() {
-        if ghost_btn.is_some() || investigator_btn.is_some() {
-            *color = if *interaction == Interaction::Hovered {
-                hover_color
-            } else {
-                idle_color
-            };
+    let delta = time.delta_seconds();
+    for (interaction, mut color, kind, mut anim) in buttons.iter_mut() {
+        if matches!(kind, ButtonKind::GhostSelect | ButtonKind::InvestigatorSelect) {
+            let target = if *interaction == Interaction::Hovered { 1.0_f32 } else { 0.0 };
+            anim.0 += (target - anim.0) * (delta * 10.0).min(1.0);
+            let t = anim.0;
+            *color = BackgroundColor(Color::srgba(
+                0.08 + t * 0.12,
+                0.10 + t * 0.35,
+                0.16 + t * 0.79,
+                0.92 + t * 0.03,
+            ));
         }
     }
 }

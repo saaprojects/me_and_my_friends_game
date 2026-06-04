@@ -7,9 +7,8 @@ use crate::gameplay::exorcism::{
 };
 use crate::gameplay::investigator::tools::{EquipmentState, EvidenceState};
 use crate::ui::{
-    EmfText, GhostAbilityText, GhostHudRoot, HudRoot, JournalConfirmButton, JournalConfirmText,
-    JournalEmfText, JournalGuessText, JournalSection, JournalSelectBansheeButton,
-    JournalSelectOnryoButton, JournalSelectSpiritButton, JournalSpiritText, ObjectiveBodyText,
+    ButtonKind, EmfText, GhostAbilityText, GhostHudRoot, HudRoot, JournalConfirmText,
+    JournalEmfText, JournalGuessText, JournalSection, JournalSpiritText, ObjectiveBodyText,
     ObjectiveTitleText, PuzzleDetailText, PuzzleStatusText, PuzzleTitleText, SpiritboxText,
     ToolText,
 };
@@ -189,7 +188,7 @@ pub fn setup_hud(mut commands: Commands) {
                         background_color: button_color,
                         ..default()
                     },
-                    JournalSelectSpiritButton,
+                    ButtonKind::JournalSelectSpirit,
                     JournalSection,
                 ))
                 .with_children(|button| {
@@ -210,7 +209,7 @@ pub fn setup_hud(mut commands: Commands) {
                         background_color: button_color,
                         ..default()
                     },
-                    JournalSelectBansheeButton,
+                    ButtonKind::JournalSelectBanshee,
                     JournalSection,
                 ))
                 .with_children(|button| {
@@ -231,7 +230,7 @@ pub fn setup_hud(mut commands: Commands) {
                         background_color: button_color,
                         ..default()
                     },
-                    JournalSelectOnryoButton,
+                    ButtonKind::JournalSelectOnryo,
                     JournalSection,
                 ))
                 .with_children(|button| {
@@ -255,7 +254,7 @@ pub fn setup_hud(mut commands: Commands) {
                         background_color: BackgroundColor(Color::srgba(0.2, 0.45, 0.95, 0.95)),
                         ..default()
                     },
-                    JournalConfirmButton,
+                    ButtonKind::JournalConfirm,
                     JournalSection,
                 ))
                 .with_children(|button| {
@@ -396,12 +395,13 @@ pub fn handle_journal_toggle(
     keys: Res<ButtonInput<KeyCode>>,
     menu: Res<MenuState>,
     role: Res<RoleState>,
+    input: Res<crate::core::InputMap>,
     mut journal: ResMut<JournalState>,
 ) {
     if menu.open || role.current != Role::Investigator {
         return;
     }
-    if keys.just_pressed(KeyCode::KeyJ) {
+    if keys.just_pressed(input.journal_toggle) {
         journal.open = !journal.open;
     }
 }
@@ -432,13 +432,7 @@ pub fn sync_journal_panel_visibility(
 
 pub fn handle_journal_interactions(
     mut interactions: Query<
-        (
-            &Interaction,
-            Option<&JournalSelectSpiritButton>,
-            Option<&JournalSelectBansheeButton>,
-            Option<&JournalSelectOnryoButton>,
-            Option<&JournalConfirmButton>,
-        ),
+        (&Interaction, &ButtonKind),
         (Changed<Interaction>, With<Button>),
     >,
     role: Res<RoleState>,
@@ -451,21 +445,27 @@ pub fn handle_journal_interactions(
         return;
     }
 
-    for (interaction, spirit_btn, banshee_btn, onryo_btn, confirm_btn) in interactions.iter_mut() {
+    for (interaction, kind) in interactions.iter_mut() {
         if *interaction != Interaction::Pressed {
             continue;
         }
-        if spirit_btn.is_some() {
-            investigation.guess = Some(crate::core::GhostType::Spirit);
-        } else if banshee_btn.is_some() {
-            investigation.guess = Some(crate::core::GhostType::Banshee);
-        } else if onryo_btn.is_some() {
-            investigation.guess = Some(crate::core::GhostType::Onryo);
-        } else if confirm_btn.is_some() {
-            if investigation.guess.is_some() {
-                investigation.confirmed = true;
-                puzzle_spawned.0 = false;
+        match kind {
+            ButtonKind::JournalSelectSpirit => {
+                investigation.guess = Some(crate::core::GhostType::Spirit);
             }
+            ButtonKind::JournalSelectBanshee => {
+                investigation.guess = Some(crate::core::GhostType::Banshee);
+            }
+            ButtonKind::JournalSelectOnryo => {
+                investigation.guess = Some(crate::core::GhostType::Onryo);
+            }
+            ButtonKind::JournalConfirm => {
+                if investigation.guess.is_some() {
+                    investigation.confirmed = true;
+                    puzzle_spawned.0 = false;
+                }
+            }
+            _ => {}
         }
     }
 }
@@ -475,13 +475,7 @@ pub fn sync_journal_styles(
     role: Res<RoleState>,
     menu: Res<MenuState>,
     journal: Res<JournalState>,
-    mut buttons: Query<(
-        &mut BackgroundColor,
-        Option<&JournalSelectSpiritButton>,
-        Option<&JournalSelectBansheeButton>,
-        Option<&JournalSelectOnryoButton>,
-        Option<&JournalConfirmButton>,
-    )>,
+    mut buttons: Query<(&mut BackgroundColor, &ButtonKind)>,
     mut confirm_text: Query<&mut Text, With<JournalConfirmText>>,
 ) {
     if menu.open || role.current != Role::Investigator || !journal.open {
@@ -492,31 +486,21 @@ pub fn sync_journal_styles(
     let idle_color = BackgroundColor(Color::srgba(0.2, 0.25, 0.4, 0.9));
     let confirm_color = BackgroundColor(Color::srgba(0.2, 0.55, 0.3, 0.95));
 
-    for (mut color, spirit_btn, banshee_btn, onryo_btn, confirm_btn) in buttons.iter_mut() {
-        if spirit_btn.is_some() {
-            *color = if investigation.guess == Some(crate::core::GhostType::Spirit) {
-                selected_color
-            } else {
-                idle_color
-            };
-        } else if banshee_btn.is_some() {
-            *color = if investigation.guess == Some(crate::core::GhostType::Banshee) {
-                selected_color
-            } else {
-                idle_color
-            };
-        } else if onryo_btn.is_some() {
-            *color = if investigation.guess == Some(crate::core::GhostType::Onryo) {
-                selected_color
-            } else {
-                idle_color
-            };
-        } else if confirm_btn.is_some() {
-            *color = if investigation.confirmed {
-                confirm_color
-            } else {
-                idle_color
-            };
+    for (mut color, kind) in buttons.iter_mut() {
+        match kind {
+            ButtonKind::JournalSelectSpirit => {
+                *color = if investigation.guess == Some(crate::core::GhostType::Spirit) { selected_color } else { idle_color };
+            }
+            ButtonKind::JournalSelectBanshee => {
+                *color = if investigation.guess == Some(crate::core::GhostType::Banshee) { selected_color } else { idle_color };
+            }
+            ButtonKind::JournalSelectOnryo => {
+                *color = if investigation.guess == Some(crate::core::GhostType::Onryo) { selected_color } else { idle_color };
+            }
+            ButtonKind::JournalConfirm => {
+                *color = if investigation.confirmed { confirm_color } else { idle_color };
+            }
+            _ => {}
         }
     }
 
@@ -540,30 +524,22 @@ pub fn sync_journal_visibility(
     role: Res<RoleState>,
     menu: Res<MenuState>,
     journal: Res<JournalState>,
-    mut items: Query<(
-        &mut Visibility,
-        Option<&JournalSelectSpiritButton>,
-        Option<&JournalSelectBansheeButton>,
-        Option<&JournalSelectOnryoButton>,
-        Option<&JournalConfirmButton>,
-    )>,
+    mut items: Query<(&mut Visibility, &ButtonKind)>,
 ) {
     if menu.open || role.current != Role::Investigator || !journal.open {
         return;
     }
 
     let show = !investigation.confirmed;
-    for (mut visibility, spirit_btn, banshee_btn, onryo_btn, confirm_btn) in items.iter_mut() {
-        if spirit_btn.is_some()
-            || banshee_btn.is_some()
-            || onryo_btn.is_some()
-            || confirm_btn.is_some()
-        {
-            *visibility = if show {
-                Visibility::Visible
-            } else {
-                Visibility::Hidden
-            };
+    for (mut visibility, kind) in items.iter_mut() {
+        if matches!(
+            kind,
+            ButtonKind::JournalSelectSpirit
+                | ButtonKind::JournalSelectBanshee
+                | ButtonKind::JournalSelectOnryo
+                | ButtonKind::JournalConfirm
+        ) {
+            *visibility = if show { Visibility::Visible } else { Visibility::Hidden };
         }
     }
 }
@@ -578,7 +554,7 @@ pub fn sync_hud_text(
     investigation: Res<InvestigationState>,
     tables: Res<ExorcismTables>,
     banshee_sequence: Option<Res<BansheeSequence>>,
-    house_layout: Option<Res<crate::gameplay::map::HouseLayout>>,
+    placement: Option<Res<crate::gameplay::map::ExorcismPlacement>>,
     mut texts: Query<(
         &mut Text,
         Option<&ToolText>,
@@ -654,9 +630,9 @@ pub fn sync_hud_text(
     };
 
     let puzzle_label = puzzle_name(investigation.guess.unwrap_or(ghost_type.active));
-    let layout_sequence_len = house_layout
+    let layout_sequence_len = placement
         .as_ref()
-        .map(|layout| layout.exorcism.banshee_anchors.len() as u8)
+        .map(|p| p.banshee_anchors.len() as u8)
         .unwrap_or_else(|| tables.banshee.sequence_len());
     let sequence_len = banshee_sequence
         .as_ref()

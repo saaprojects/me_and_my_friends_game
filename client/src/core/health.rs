@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use crossbeam_channel::{self, Receiver};
-use reqwest::blocking::get;
+use reqwest::blocking::Client;
 use shared::prelude::Health;
 use std::thread;
 use std::time::Duration;
@@ -48,7 +48,14 @@ pub fn update_window_title(
 }
 
 fn fetch_health() -> HealthState {
-    match get("http://localhost:8000/health") {
+    let client = match Client::builder()
+        .timeout(Duration::from_secs(5))
+        .build()
+    {
+        Ok(c) => c,
+        Err(_) => return HealthState { status: "error".into() },
+    };
+    match client.get("http://localhost:8000/health").send() {
         Ok(resp) => {
             if !resp.status().is_success() {
                 return HealthState {

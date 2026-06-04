@@ -20,6 +20,34 @@ use crate::gameplay::map::{HouseLayout, HouseLayoutKind, HouseLayoutSelection};
 use crate::ui::hud;
 use crate::ui::*;
 
+/// Creates an App pre-loaded with all resources commonly needed by UI systems.
+/// Tests can override specific resources or add extra ones after calling this.
+#[allow(dead_code)]
+fn base_test_app() -> App {
+    let mut app = App::new();
+    app.add_event::<AppExit>();
+    app.insert_resource(MenuState { open: true, selected_role: Role::Ghost });
+    app.insert_resource(MenuFlowState { screen: MenuScreen::Start });
+    app.insert_resource(RoleState { current: Role::Ghost });
+    app.insert_resource(crate::core::RoleYaw { ghost: 0.0, investigator: 0.0 });
+    app.insert_resource(GhostTypeState { selected: GhostType::Spirit, active: GhostType::Spirit });
+    app.insert_resource(EvidenceState::default());
+    app.insert_resource(crate::gameplay::investigator::tools::EquipmentState::default());
+    app.insert_resource(PuzzleSpawned(false));
+    app.insert_resource(InvestigationState::default());
+    app.insert_resource(ResolutionState::default());
+    app.insert_resource(SessionState { started: false });
+    app.insert_resource(CameraControl { yaw: 0.0, pitch: 0.0 });
+    app.insert_resource(JournalState { open: false });
+    app.insert_resource(crate::core::InputMap::default());
+    app.insert_resource(crate::core::GameRng::default());
+    app.insert_resource(crate::gameplay::exorcism::RoomLights::default());
+    app.insert_resource(GhostState { position: Vec3::ZERO });
+    app.insert_resource(HouseLayoutSelection::default());
+    app.insert_resource(EvidenceTuning::default());
+    app
+}
+
 #[test]
 fn journal_confirm_updates_investigation_state() {
     let mut app = App::new();
@@ -37,11 +65,11 @@ fn journal_confirm_updates_investigation_state() {
 
     let select = app
         .world_mut()
-        .spawn((Button, Interaction::None, JournalSelectBansheeButton))
+        .spawn((Button, Interaction::None, ButtonKind::JournalSelectBanshee))
         .id();
     let confirm = app
         .world_mut()
-        .spawn((Button, Interaction::None, JournalConfirmButton))
+        .spawn((Button, Interaction::None, ButtonKind::JournalConfirm))
         .id();
 
     app.world_mut()
@@ -81,7 +109,7 @@ fn journal_visibility_hides_after_confirm() {
 
     let entity = app
         .world_mut()
-        .spawn((Button, Visibility::Visible, JournalSelectSpiritButton))
+        .spawn((Button, Visibility::Visible, ButtonKind::JournalSelectSpirit))
         .id();
 
     app.update();
@@ -106,7 +134,7 @@ fn journal_visibility_shows_before_confirm() {
 
     let entity = app
         .world_mut()
-        .spawn((Button, Visibility::Hidden, JournalSelectSpiritButton))
+        .spawn((Button, Visibility::Hidden, ButtonKind::JournalSelectSpirit))
         .id();
 
     app.update();
@@ -258,6 +286,9 @@ fn start_button_moves_to_role_select() {
     let mut app = App::new();
     app.add_event::<AppExit>();
     app.add_systems(Update, crate::ui::lobby::handle_menu_interactions);
+    app.insert_resource(crate::gameplay::investigator::tools::EquipmentState::default());
+    app.insert_resource(crate::gameplay::exorcism::RoomLights::default());
+    app.insert_resource(crate::core::GameRng::default());
     app.insert_resource(MenuState {
         open: true,
         selected_role: Role::Ghost,
@@ -293,7 +324,7 @@ fn start_button_moves_to_role_select() {
             Button,
             Interaction::None,
             BackgroundColor(Color::BLACK),
-            StartScreenButton,
+            ButtonKind::StartScreen,
         ))
         .id();
 
@@ -311,6 +342,9 @@ fn room_count_selection_changes_only_on_ghost_detail_screen() {
     let mut app = App::new();
     app.add_event::<AppExit>();
     app.add_systems(Update, crate::ui::lobby::handle_menu_interactions);
+    app.insert_resource(crate::gameplay::investigator::tools::EquipmentState::default());
+    app.insert_resource(crate::gameplay::exorcism::RoomLights::default());
+    app.insert_resource(crate::core::GameRng::default());
     app.insert_resource(MenuState {
         open: true,
         selected_role: Role::Ghost,
@@ -345,7 +379,7 @@ fn room_count_selection_changes_only_on_ghost_detail_screen() {
         Button,
         Interaction::Pressed,
         BackgroundColor(Color::BLACK),
-        ThreeRoomCountButton,
+        ButtonKind::ThreeRoomCount,
     ));
     let _button_id = button.id();
 
@@ -373,6 +407,9 @@ fn begin_haunt_applies_selected_room_count_layout() {
     let mut app = App::new();
     app.add_event::<AppExit>();
     app.add_systems(Update, crate::ui::lobby::handle_menu_interactions);
+    app.insert_resource(crate::gameplay::investigator::tools::EquipmentState::default());
+    app.insert_resource(crate::gameplay::exorcism::RoomLights::default());
+    app.insert_resource(crate::core::GameRng::default());
     app.insert_resource(MenuState {
         open: true,
         selected_role: Role::Ghost,
@@ -419,7 +456,7 @@ fn begin_haunt_applies_selected_room_count_layout() {
             Button,
             Interaction::Pressed,
             BackgroundColor(Color::BLACK),
-            ThreeRoomCountButton,
+            ButtonKind::ThreeRoomCount,
         ))
         .id();
     app.update();
@@ -433,7 +470,7 @@ fn begin_haunt_applies_selected_room_count_layout() {
         Button,
         Interaction::Pressed,
         BackgroundColor(Color::BLACK),
-        BeginHauntButton,
+        ButtonKind::BeginHaunt,
     ));
     app.update();
 
@@ -469,6 +506,9 @@ fn begin_investigation_applies_selected_room_count_layout() {
     let mut app = App::new();
     app.add_event::<AppExit>();
     app.add_systems(Update, crate::ui::lobby::handle_menu_interactions);
+    app.insert_resource(crate::gameplay::investigator::tools::EquipmentState::default());
+    app.insert_resource(crate::gameplay::exorcism::RoomLights::default());
+    app.insert_resource(crate::core::GameRng::default());
     app.insert_resource(MenuState {
         open: true,
         selected_role: Role::Ghost,
@@ -515,7 +555,7 @@ fn begin_investigation_applies_selected_room_count_layout() {
             Button,
             Interaction::Pressed,
             BackgroundColor(Color::BLACK),
-            ThreeRoomCountButton,
+            ButtonKind::ThreeRoomCount,
         ))
         .id();
     app.update();
@@ -530,7 +570,7 @@ fn begin_investigation_applies_selected_room_count_layout() {
         Button,
         Interaction::Pressed,
         BackgroundColor(Color::BLACK),
-        BeginInvestigationButton,
+        ButtonKind::BeginInvestigation,
     ));
     app.update();
 
@@ -545,6 +585,9 @@ fn begin_investigation_resets_player_and_ghost_spawns() {
     let mut app = App::new();
     app.add_event::<AppExit>();
     app.add_systems(Update, crate::ui::lobby::handle_menu_interactions);
+    app.insert_resource(crate::gameplay::investigator::tools::EquipmentState::default());
+    app.insert_resource(crate::gameplay::exorcism::RoomLights::default());
+    app.insert_resource(crate::core::GameRng::default());
     app.insert_resource(MenuState {
         open: true,
         selected_role: Role::Ghost,
@@ -595,7 +638,7 @@ fn begin_investigation_resets_player_and_ghost_spawns() {
             Button,
             Interaction::Pressed,
             BackgroundColor(Color::BLACK),
-            BeginInvestigationButton,
+            ButtonKind::BeginInvestigation,
         ))
         .id();
 
@@ -629,6 +672,9 @@ fn begin_investigation_uses_house_layout_spawn_metadata_when_present() {
     let mut app = App::new();
     app.add_event::<AppExit>();
     app.add_systems(Update, crate::ui::lobby::handle_menu_interactions);
+    app.insert_resource(crate::gameplay::investigator::tools::EquipmentState::default());
+    app.insert_resource(crate::gameplay::exorcism::RoomLights::default());
+    app.insert_resource(crate::core::GameRng::default());
     app.insert_resource(MenuState {
         open: true,
         selected_role: Role::Ghost,
@@ -715,7 +761,7 @@ fn begin_investigation_uses_house_layout_spawn_metadata_when_present() {
         Button,
         Interaction::Pressed,
         BackgroundColor(Color::BLACK),
-        BeginInvestigationButton,
+        ButtonKind::BeginInvestigation,
     ));
 
     app.update();
@@ -733,6 +779,7 @@ fn begin_investigation_uses_house_layout_spawn_metadata_when_present() {
 fn escape_returns_to_role_select_from_details() {
     let mut app = App::new();
     app.add_systems(Update, crate::ui::lobby::handle_menu_toggle);
+    app.insert_resource(crate::core::InputMap::default());
     app.insert_resource(MenuState {
         open: true,
         selected_role: Role::Ghost,
@@ -792,6 +839,7 @@ fn cursor_unlocks_when_journal_open() {
 fn emf_updates_even_when_spiritbox_active() {
     let mut app = App::new();
     app.add_systems(Update, update_emf_reading);
+    app.insert_resource(SessionState { started: true });
     app.insert_resource(MenuState {
         open: false,
         selected_role: Role::Investigator,
@@ -848,6 +896,8 @@ fn emf_updates_even_when_spiritbox_active() {
 fn spiritbox_gives_directional_banshee_reply_in_same_room() {
     let mut app = App::new();
     app.add_systems(Update, handle_spiritbox);
+    app.insert_resource(crate::core::InputMap::default());
+    app.insert_resource(SessionState { started: true });
     app.insert_resource(MenuState {
         open: false,
         selected_role: Role::Investigator,
@@ -932,6 +982,8 @@ fn spiritbox_gives_directional_banshee_reply_in_same_room() {
 fn spiritbox_says_here_only_when_banshee_is_actually_close() {
     let mut app = App::new();
     app.add_systems(Update, handle_spiritbox);
+    app.insert_resource(crate::core::InputMap::default());
+    app.insert_resource(SessionState { started: true });
     app.insert_resource(MenuState {
         open: false,
         selected_role: Role::Investigator,
@@ -1016,6 +1068,8 @@ fn spiritbox_says_here_only_when_banshee_is_actually_close() {
 fn spiritbox_stays_static_when_banshee_is_in_another_room() {
     let mut app = App::new();
     app.add_systems(Update, handle_spiritbox);
+    app.insert_resource(crate::core::InputMap::default());
+    app.insert_resource(SessionState { started: true });
     app.insert_resource(MenuState {
         open: false,
         selected_role: Role::Investigator,

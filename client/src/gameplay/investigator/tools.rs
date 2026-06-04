@@ -1,9 +1,8 @@
 use crate::prelude::*;
 
-use crate::core::{GhostTypeState, JournalState, MenuState, RoleState};
+use crate::core::{GhostTypeState, InputMap, JournalState, MenuState, RoleState, SessionState};
 use crate::gameplay::evidence::{
-    emf_five_candidate, emf_level, overlap_distance, spiritbox_bearing, spiritbox_is_evidence,
-    spiritbox_reply, EvidenceTuning,
+    spiritbox_bearing, spiritbox_is_evidence, spiritbox_reply, tick_emf, EvidenceTuning,
 };
 use crate::gameplay::ghost::GhostState;
 use crate::gameplay::investigator::Player;
@@ -21,6 +20,20 @@ pub struct EquipmentState {
     pub spiritbox_cooldown: f32,
 }
 
+impl Default for EquipmentState {
+    fn default() -> Self {
+        Self {
+            active: Equipment::Emf,
+            emf_level: 0,
+            emf_dwell: 0.0,
+            emf_smoothed: 0.0,
+            emf_evidence_latch: 0.0,
+            spiritbox_message: "Silence...".to_string(),
+            spiritbox_cooldown: 0.0,
+        }
+    }
+}
+
 #[derive(Resource, Default)]
 pub struct EvidenceState {
     pub emf_five: bool,
@@ -32,15 +45,16 @@ pub fn handle_equipment_input(
     menu: Res<MenuState>,
     role: Res<RoleState>,
     journal: Res<JournalState>,
+    input: Res<InputMap>,
     mut equipment: ResMut<EquipmentState>,
 ) {
     if menu.open || journal.open || role.current != Role::Investigator {
         return;
     }
-    if keys.just_pressed(KeyCode::Digit1) || keys.just_pressed(KeyCode::Numpad1) {
+    if keys.just_pressed(input.tool_emf) || keys.just_pressed(input.tool_emf_alt) {
         equipment.active = Equipment::Emf;
     }
-    if keys.just_pressed(KeyCode::Digit2) || keys.just_pressed(KeyCode::Numpad2) {
+    if keys.just_pressed(input.tool_spiritbox) || keys.just_pressed(input.tool_spiritbox_alt) {
         equipment.active = Equipment::Spiritbox;
     }
 }
@@ -50,6 +64,7 @@ pub fn update_emf_reading(
     role: Res<RoleState>,
     menu: Res<MenuState>,
     journal: Res<JournalState>,
+    session: Res<SessionState>,
     ghost: Res<GhostState>,
     control: Res<CameraControl>,
     tuning: Res<EvidenceTuning>,
@@ -60,7 +75,7 @@ pub fn update_emf_reading(
     player: Query<&Transform, With<Player>>,
     camera: Query<&Transform, With<Camera>>,
 ) {
-    if menu.open || journal.open || role.current != Role::Investigator {
+    if menu.open || journal.open || role.current != Role::Investigator || !session.started {
         equipment.emf_level = 0;
         equipment.emf_dwell = 0.0;
         equipment.emf_evidence_latch = 0.0;
@@ -74,15 +89,13 @@ pub fn update_emf_reading(
         return;
     };
 
-    let to_ghost = ghost.position - player_transform.translation;
-    let distance = to_ghost.length();
+    let distance = ghost.position.distance(player_transform.translation);
     let facing = facing_ghost(
         player_transform.translation,
         ghost.position,
         view_forward(&control, camera.get_single().ok()),
         tuning.emf_facing_dot,
     );
-
     let player_room = house_layout
         .as_ref()
         .and_then(|layout| room_id_in_house(layout, player_transform.translation))
@@ -92,52 +105,25 @@ pub fn update_emf_reading(
         .and_then(|layout| room_id_in_house(layout, ghost.position))
         .unwrap_or_else(|| room_id(ghost.position));
     let same_room = player_room == ghost_room;
-    let base_level = emf_level(ghost_type.active, distance, same_room, &tuning);
-    let overlaps = distance <= overlap_distance(&tuning);
-    let candidate_five =
-        overlaps && emf_five_candidate(ghost_type.active, distance, &tuning) && facing;
 
-    let dt = time.delta_seconds();
-    let dwell_lock = tuning.emf_dwell_lock;
-    if candidate_five {
-        equipment.emf_dwell = (equipment.emf_dwell + dt).min(dwell_lock);
-    } else {
-        equipment.emf_dwell = (equipment.emf_dwell - dt * tuning.emf_dwell_decay_mul).max(0.0);
-    }
-
-    let locked_five = equipment.emf_dwell >= dwell_lock;
-    if locked_five {
-        equipment.emf_evidence_latch = tuning.emf_evidence_latch;
-    } else {
-        equipment.emf_evidence_latch = (equipment.emf_evidence_latch - dt).max(0.0);
-    }
-
-    let mut target_level = if locked_five { 5.0 } else { base_level as f32 };
-    if !facing {
-        target_level = target_level.min(4.0);
-    }
-
-    if !locked_five {
-        let jitter_amp = match base_level {
-            2 | 3 => tuning.emf_jitter_amp_23,
-            4 => tuning.emf_jitter_amp_4,
-            _ => 0.0,
-        };
-        if jitter_amp > 0.0 {
-            let t = time.elapsed_seconds() + tuning.emf_jitter_phase;
-            let jitter =
-                (t * tuning.emf_jitter_f1).sin() * 0.6 + (t * tuning.emf_jitter_f2).sin() * 0.4;
-            target_level += jitter * jitter_amp;
-        }
-        target_level = target_level.clamp(0.0, 4.49);
-    }
-
-    let smooth_rate = tuning.emf_smooth_rate;
-    let alpha = 1.0 - (-smooth_rate * dt).exp();
-    equipment.emf_smoothed += (target_level - equipment.emf_smoothed) * alpha;
-    equipment.emf_level = equipment.emf_smoothed.round().clamp(0.0, 5.0) as u8;
-
-    if equipment.active == Equipment::Emf && equipment.emf_evidence_latch > 0.0 {
+    let out = tick_emf(
+        distance,
+        facing,
+        ghost_type.active,
+        same_room,
+        equipment.emf_dwell,
+        equipment.emf_smoothed,
+        equipment.emf_evidence_latch,
+        equipment.active,
+        time.delta_seconds(),
+        time.elapsed_seconds(),
+        &tuning,
+    );
+    equipment.emf_dwell = out.emf_dwell;
+    equipment.emf_evidence_latch = out.emf_evidence_latch;
+    equipment.emf_smoothed = out.emf_smoothed;
+    equipment.emf_level = out.emf_level;
+    if out.trigger_evidence {
         evidence.emf_five = true;
     }
 }
@@ -148,6 +134,8 @@ pub fn handle_spiritbox(
     role: Res<RoleState>,
     menu: Res<MenuState>,
     journal: Res<JournalState>,
+    session: Res<SessionState>,
+    input: Res<InputMap>,
     ghost: Res<GhostState>,
     control: Res<CameraControl>,
     tuning: Res<EvidenceTuning>,
@@ -166,12 +154,13 @@ pub fn handle_spiritbox(
     if menu.open
         || journal.open
         || role.current != Role::Investigator
+        || !session.started
         || equipment.active != Equipment::Spiritbox
     {
         return;
     }
 
-    if !keys.just_pressed(KeyCode::KeyE) {
+    if !keys.just_pressed(input.spiritbox_ask) {
         return;
     }
 

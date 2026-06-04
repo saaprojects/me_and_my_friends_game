@@ -1,19 +1,25 @@
 use crate::prelude::*;
 
-use crate::core::{GhostType, GhostTypeState, JournalState, MenuState, Role, RoleState};
+use crate::core::{GameRng, GhostType, InputMap, MenuState, Role, RoleState};
 use crate::gameplay::ghost::GhostState;
-use crate::gameplay::map::systems::default_house_layout;
-use crate::gameplay::map::systems::{room_id, room_id_in_house};
-use crate::gameplay::map::HouseLayout;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
+use crate::gameplay::map::rooms::{default_house_layout, room_id, room_id_in_house};
+use crate::gameplay::map::{ExorcismPlacement, HouseLayout};
 
+pub mod banshee;
+pub mod onryo;
 pub mod rules;
+pub mod spirit;
 pub mod tables;
 
+use banshee::{BansheeAnchor, BansheePuzzle};
+use onryo::{OnryoCursed, OnryoPuzzle, OnryoRitual};
+use spirit::{SpiritAnchor, SpiritPuzzle};
 use tables::ExorcismTables;
 
-static BANSHEE_SEQUENCE_COUNTER: AtomicU64 = AtomicU64::new(0);
+pub use banshee::BansheeSequence;
+#[cfg(test)]
+pub use banshee::BansheeNodeColor;
+pub use spirit::SpiritMarker;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ExorcismState {
@@ -42,186 +48,51 @@ pub struct InvestigationState {
 #[derive(Resource)]
 pub struct PuzzleSpawned(pub bool);
 
-#[derive(Resource)]
-pub(crate) struct RoomLights {
+#[derive(Resource, Default)]
+pub struct RoomLights {
     rooms: Vec<(u8, bool)>,
 }
 
 impl RoomLights {
-    pub(crate) fn is_enabled(&self, room_id: u8) -> bool {
+    pub fn is_enabled(&self, room_id: u8) -> bool {
         self.rooms
             .iter()
             .find(|(id, _)| *id == room_id)
             .map(|(_, enabled)| *enabled)
             .unwrap_or(true)
     }
-}
 
-#[derive(Component)]
-struct PuzzleEntity;
-
-#[derive(Component)]
-struct SpiritAnchor {
-    room_id: u8,
-    last_seen: f32,
-}
-
-#[derive(Component)]
-pub struct SpiritMarker;
-
-#[derive(Component)]
-struct BansheeAnchor {
-    color: BansheeNodeColor,
-}
-
-#[derive(Component)]
-struct OnryoCursed {
-    placed: bool,
-}
-
-#[derive(Component)]
-struct OnryoRitual {
-    index: u8,
-}
-
-#[derive(Resource)]
-struct SpiritPuzzle {
-    progress: f32,
-}
-
-#[derive(Resource)]
-struct BansheePuzzle {
-    stage: u8,
-    time_since_trigger: f32,
-    failed_timer: f32,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum BansheeNodeColor {
-    Violet,
-    Amber,
-    Teal,
-}
-
-impl BansheeNodeColor {
-    fn palette(count: usize) -> Vec<Self> {
-        [Self::Violet, Self::Amber, Self::Teal]
-            .into_iter()
-            .take(count.clamp(1, 3))
-            .collect()
-    }
-
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Violet => "Violet",
-            Self::Amber => "Amber",
-            Self::Teal => "Teal",
+    pub fn reset(&mut self, house_layout: Option<&HouseLayout>) {
+        self.rooms.clear();
+        if let Some(layout) = house_layout {
+            for room in &layout.rooms {
+                self.rooms.push((room.id, true));
+            }
+            return;
         }
-    }
-
-    fn base_color(self) -> Color {
-        match self {
-            Self::Violet => Color::srgb(0.8, 0.38, 0.95),
-            Self::Amber => Color::srgb(0.95, 0.72, 0.25),
-            Self::Teal => Color::srgb(0.25, 0.85, 0.8),
-        }
-    }
-
-    fn emissive(self) -> Color {
-        match self {
-            Self::Violet => Color::srgb(0.25, 0.1, 0.38),
-            Self::Amber => Color::srgb(0.34, 0.2, 0.06),
-            Self::Teal => Color::srgb(0.06, 0.24, 0.22),
+        for id in 0..4 {
+            self.rooms.push((id, true));
         }
     }
 }
 
-#[derive(Resource, Clone, Debug)]
-pub struct BansheeSequence {
-    pub anchor_colors: Vec<BansheeNodeColor>,
-    pub order: Vec<BansheeNodeColor>,
-}
-
-impl Default for BansheeSequence {
-    fn default() -> Self {
-        Self::for_anchor_count(3)
-    }
-}
-
-impl BansheeSequence {
-    pub fn for_anchor_count(count: usize) -> Self {
-        let anchor_colors = BansheeNodeColor::palette(count);
-        let mut order = anchor_colors.clone();
-        shuffle_colors(&mut order, banshee_random_seed(count as u64));
-        Self {
-            anchor_colors,
-            order,
-        }
-    }
-
-    fn reset_for_anchor_count(&mut self, count: usize) {
-        *self = Self::for_anchor_count(count);
-    }
-
-    pub fn sequence_len(&self) -> u8 {
-        self.order.len() as u8
-    }
-
-    pub fn color_for_index(&self, index: usize) -> BansheeNodeColor {
-        self.anchor_colors
-            .get(index)
-            .copied()
-            .unwrap_or(BansheeNodeColor::Violet)
-    }
-
-    pub fn expected_color(&self, stage: u8) -> Option<BansheeNodeColor> {
-        self.order.get(stage as usize).copied()
-    }
-
-    pub fn current_target_label(&self, stage: u8) -> &'static str {
-        self.expected_color(stage)
-            .map(BansheeNodeColor::label)
-            .unwrap_or("Complete")
-    }
-
-    pub fn order_summary(&self) -> String {
-        self.order
-            .iter()
-            .map(|color| color.label())
-            .collect::<Vec<_>>()
-            .join(" -> ")
-    }
-}
-
-#[derive(Resource)]
-struct OnryoPuzzle {
-    stage: u8,
-    stacks: f32,
-    max_stacks: f32,
-    carrying: Option<Entity>,
-}
+#[derive(Component)]
+pub(crate) struct PuzzleEntity;
 
 pub struct ExorcismPlugin;
 
 impl Plugin for ExorcismPlugin {
     fn build(&self, app: &mut App) {
         let tables = ExorcismTables::default();
-        app.insert_resource(tables.clone())
+        app.init_resource::<GameRng>()
+            .init_resource::<crate::core::InputMap>()
+            .insert_resource(tables.clone())
             .insert_resource(PuzzleSpawned(false))
             .insert_resource(RoomLights { rooms: Vec::new() })
-            .insert_resource(SpiritPuzzle { progress: 0.0 })
+            .insert_resource(SpiritPuzzle::default())
             .insert_resource(BansheeSequence::default())
-            .insert_resource(BansheePuzzle {
-                stage: 0,
-                time_since_trigger: 0.0,
-                failed_timer: 0.0,
-            })
-            .insert_resource(OnryoPuzzle {
-                stage: 0,
-                stacks: 0.0,
-                max_stacks: tables.onryo.max_stacks,
-                carrying: None,
-            })
+            .insert_resource(BansheePuzzle::default())
+            .insert_resource(OnryoPuzzle::new(tables.onryo.max_stacks))
             .insert_resource(ExorcismStatus {
                 state: ExorcismState::Inactive,
                 progress: 0.0,
@@ -236,32 +107,19 @@ impl Plugin for ExorcismPlugin {
                     maybe_reset_puzzle,
                     spawn_puzzle_entities,
                     ghost_toggle_lights,
-                    update_spirit_puzzle,
-                    update_banshee_puzzle,
-                    update_onryo_puzzle,
+                    spirit::update_spirit_puzzle,
+                    banshee::update_banshee_puzzle,
+                    onryo::update_onryo_puzzle,
                 )
                     .chain(),
             );
     }
 }
 
-fn resolve_room_id(house_layout: Option<&HouseLayout>, position: Vec3) -> u8 {
+pub(crate) fn resolve_room_id(house_layout: Option<&HouseLayout>, position: Vec3) -> u8 {
     house_layout
         .and_then(|layout| room_id_in_house(layout, position))
         .unwrap_or_else(|| room_id(position))
-}
-
-fn reset_room_lights(lights: &mut RoomLights, house_layout: Option<&HouseLayout>) {
-    lights.rooms.clear();
-    if let Some(layout) = house_layout {
-        for room in &layout.rooms {
-            lights.rooms.push((room.id, true));
-        }
-        return;
-    }
-    for id in 0..4 {
-        lights.rooms.push((id, true));
-    }
 }
 
 fn toggle_room_light(lights: &mut RoomLights, room_id: u8) {
@@ -272,27 +130,43 @@ fn toggle_room_light(lights: &mut RoomLights, room_id: u8) {
     }
 }
 
-fn spirit_anchor_positions(house_layout: Option<&HouseLayout>) -> Vec<Vec3> {
-    house_layout
-        .map(|layout| layout.exorcism.spirit_anchors.clone())
+pub(crate) fn spirit_anchor_positions(
+    placement: Option<&ExorcismPlacement>,
+    layout: Option<&HouseLayout>,
+) -> Vec<Vec3> {
+    placement
+        .map(|p| p.spirit_anchors.clone())
+        .or_else(|| layout.map(|l| l.exorcism.spirit_anchors.clone()))
         .unwrap_or_else(|| default_house_layout().exorcism.spirit_anchors)
 }
 
-fn banshee_anchor_positions(house_layout: Option<&HouseLayout>) -> Vec<Vec3> {
-    house_layout
-        .map(|layout| layout.exorcism.banshee_anchors.clone())
+pub(crate) fn banshee_anchor_positions(
+    placement: Option<&ExorcismPlacement>,
+    layout: Option<&HouseLayout>,
+) -> Vec<Vec3> {
+    placement
+        .map(|p| p.banshee_anchors.clone())
+        .or_else(|| layout.map(|l| l.exorcism.banshee_anchors.clone()))
         .unwrap_or_else(|| default_house_layout().exorcism.banshee_anchors)
 }
 
-fn onryo_cursed_positions(house_layout: Option<&HouseLayout>) -> Vec<Vec3> {
-    house_layout
-        .map(|layout| layout.exorcism.onryo_cursed_positions.clone())
+pub(crate) fn onryo_cursed_positions(
+    placement: Option<&ExorcismPlacement>,
+    layout: Option<&HouseLayout>,
+) -> Vec<Vec3> {
+    placement
+        .map(|p| p.onryo_cursed_positions.clone())
+        .or_else(|| layout.map(|l| l.exorcism.onryo_cursed_positions.clone()))
         .unwrap_or_else(|| default_house_layout().exorcism.onryo_cursed_positions)
 }
 
-fn onryo_ritual_positions(house_layout: Option<&HouseLayout>) -> Vec<Vec3> {
-    house_layout
-        .map(|layout| layout.exorcism.onryo_ritual_positions.clone())
+pub(crate) fn onryo_ritual_positions(
+    placement: Option<&ExorcismPlacement>,
+    layout: Option<&HouseLayout>,
+) -> Vec<Vec3> {
+    placement
+        .map(|p| p.onryo_ritual_positions.clone())
+        .or_else(|| layout.map(|l| l.exorcism.onryo_ritual_positions.clone()))
         .unwrap_or_else(|| default_house_layout().exorcism.onryo_ritual_positions)
 }
 
@@ -310,6 +184,8 @@ fn maybe_reset_puzzle(
     menu: Res<MenuState>,
     investigation: Res<InvestigationState>,
     house_layout: Option<Res<HouseLayout>>,
+    placement: Option<Res<ExorcismPlacement>>,
+    mut rng: ResMut<GameRng>,
 ) {
     if menu.open {
         return;
@@ -337,11 +213,11 @@ fn maybe_reset_puzzle(
     banshee.time_since_trigger = 0.0;
     banshee.failed_timer = 0.0;
     banshee_sequence
-        .reset_for_anchor_count(banshee_anchor_positions(house_layout.as_deref()).len());
+        .reset_for_anchor_count(banshee_anchor_positions(placement.as_deref(), house_layout.as_deref()).len(), &mut rng);
     onryo.stage = 0;
     onryo.stacks = 0.0;
     onryo.carrying = None;
-    reset_room_lights(&mut lights, house_layout.as_deref());
+    lights.reset(house_layout.as_deref());
 
     if !investigation.confirmed {
         status.state = ExorcismState::Inactive;
@@ -361,6 +237,7 @@ fn spawn_puzzle_entities(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     house_layout: Option<Res<HouseLayout>>,
+    placement: Option<Res<ExorcismPlacement>>,
 ) {
     if spawned.0 || menu.open || !investigation.confirmed {
         return;
@@ -371,7 +248,7 @@ fn spawn_puzzle_entities(
     };
 
     match puzzle_type {
-        crate::core::GhostType::Spirit => {
+        GhostType::Spirit => {
             let anchor_mesh = meshes.add(Cuboid::new(0.35, 1.4, 0.1));
             let anchor_material = materials.add(Color::srgb(0.7, 0.75, 0.9));
             let marker_mesh = meshes.add(Cylinder::new(0.6, 0.04));
@@ -380,7 +257,7 @@ fn spawn_puzzle_entities(
                 emissive: Color::srgb(0.12, 0.22, 0.45).into(),
                 ..default()
             });
-            for pos in spirit_anchor_positions(house_layout.as_deref()) {
+            for pos in spirit_anchor_positions(placement.as_deref(), house_layout.as_deref()) {
                 commands.spawn((
                     PbrBundle {
                         mesh: anchor_mesh.clone(),
@@ -406,10 +283,10 @@ fn spawn_puzzle_entities(
                 ));
             }
         }
-        crate::core::GhostType::Banshee => {
+        GhostType::Banshee => {
             let anchor_mesh = meshes.add(Sphere::new(0.3).mesh().uv(16, 12));
             let marker_mesh = meshes.add(Cylinder::new(0.72, 0.05));
-            for (index, pos) in banshee_anchor_positions(house_layout.as_deref())
+            for (index, pos) in banshee_anchor_positions(placement.as_deref(), house_layout.as_deref())
                 .into_iter()
                 .enumerate()
             {
@@ -447,13 +324,13 @@ fn spawn_puzzle_entities(
                 ));
             }
         }
-        crate::core::GhostType::Onryo => {
+        GhostType::Onryo => {
             let cursed_mesh = meshes.add(Sphere::new(0.25).mesh().uv(16, 12));
             let cursed_material = materials.add(Color::srgb(0.9, 0.35, 0.35));
             let ritual_mesh = meshes.add(Cuboid::new(0.9, 0.05, 0.9));
             let ritual_material = materials.add(Color::srgb(0.35, 0.6, 0.9));
 
-            for pos in onryo_cursed_positions(house_layout.as_deref()) {
+            for pos in onryo_cursed_positions(placement.as_deref(), house_layout.as_deref()) {
                 commands.spawn((
                     PbrBundle {
                         mesh: cursed_mesh.clone(),
@@ -466,7 +343,7 @@ fn spawn_puzzle_entities(
                 ));
             }
 
-            for (index, pos) in onryo_ritual_positions(house_layout.as_deref())
+            for (index, pos) in onryo_ritual_positions(placement.as_deref(), house_layout.as_deref())
                 .into_iter()
                 .enumerate()
             {
@@ -491,6 +368,7 @@ fn ghost_toggle_lights(
     keys: Res<ButtonInput<KeyCode>>,
     menu: Res<MenuState>,
     role: Res<RoleState>,
+    input: Res<InputMap>,
     ghost: Res<GhostState>,
     mut lights: ResMut<RoomLights>,
     house_layout: Option<Res<HouseLayout>>,
@@ -498,366 +376,16 @@ fn ghost_toggle_lights(
     if menu.open || role.current != Role::Ghost {
         return;
     }
-    if keys.just_pressed(KeyCode::KeyL) {
+    if keys.just_pressed(input.toggle_lights) {
         let room = resolve_room_id(house_layout.as_deref(), ghost.position);
         toggle_room_light(&mut lights, room);
-    }
-}
-
-fn update_spirit_puzzle(
-    time: Res<Time>,
-    menu: Res<MenuState>,
-    role: Res<RoleState>,
-    ghost_type: Res<GhostTypeState>,
-    investigation: Res<InvestigationState>,
-    tables: Res<ExorcismTables>,
-    journal: Res<JournalState>,
-    lights: Res<RoomLights>,
-    mut anchors: Query<(&mut SpiritAnchor, &Transform)>,
-    camera: Query<&Transform, With<Camera>>,
-    mut spirit: ResMut<SpiritPuzzle>,
-    mut status: ResMut<ExorcismStatus>,
-) {
-    if menu.open || journal.open || role.current != Role::Investigator {
-        return;
-    }
-    let Some(puzzle_type) = investigation.guess else {
-        return;
-    };
-    if !investigation.confirmed || puzzle_type != GhostType::Spirit {
-        return;
-    }
-
-    let Ok(camera_transform) = camera.get_single() else {
-        return;
-    };
-    let cam_pos = camera_transform.translation;
-    let cam_forward = camera_transform.forward();
-    let watch_cos = tables.spirit.watch_cos;
-    let max_distance = tables.spirit.watch_distance;
-    let grace_seconds = tables.spirit.grace_seconds;
-
-    let mut recent_count = 0u8;
-    let mut total_count = 0u8;
-    for (mut anchor, transform) in anchors.iter_mut() {
-        total_count = total_count.saturating_add(1);
-        let to_anchor = transform.translation - cam_pos;
-        let distance = to_anchor.length();
-        let dir = to_anchor.normalize_or_zero();
-        let seen = distance <= max_distance
-            && cam_forward.dot(dir) >= watch_cos
-            && lights.is_enabled(anchor.room_id);
-        if seen {
-            anchor.last_seen = 0.0;
-        } else {
-            anchor.last_seen += time.delta_seconds();
-        }
-        if anchor.last_seen <= grace_seconds {
-            recent_count = recent_count.saturating_add(1);
-        }
-    }
-
-    let required_count = total_count.clamp(1, 2);
-    let target_progress = if required_count == 0 {
-        0.0
-    } else {
-        (recent_count as f32 / required_count as f32).clamp(0.0, 1.0)
-    };
-
-    spirit.progress = rules::spirit_progress(
-        spirit.progress,
-        target_progress,
-        time.delta_seconds(),
-        tables.spirit.rate_up,
-        tables.spirit.rate_down,
-    );
-    status.progress = spirit.progress;
-    status.stage = recent_count;
-    status.stacks = 0.0;
-    status.max_stacks = required_count as f32;
-    if spirit.progress >= 1.0 {
-        if ghost_type.active == GhostType::Spirit {
-            status.state = ExorcismState::Complete;
-        } else {
-            status.state = ExorcismState::Failed;
-        }
-    } else {
-        status.state = ExorcismState::Progress(spirit.progress);
-    }
-}
-
-fn update_banshee_puzzle(
-    time: Res<Time>,
-    keys: Res<ButtonInput<KeyCode>>,
-    menu: Res<MenuState>,
-    role: Res<RoleState>,
-    ghost_type: Res<GhostTypeState>,
-    investigation: Res<InvestigationState>,
-    tables: Res<ExorcismTables>,
-    banshee_sequence: Res<BansheeSequence>,
-    journal: Res<JournalState>,
-    house_layout: Option<Res<HouseLayout>>,
-    player: Query<&Transform, With<crate::gameplay::investigator::Player>>,
-    anchors: Query<(&BansheeAnchor, &Transform)>,
-    mut banshee: ResMut<BansheePuzzle>,
-    mut status: ResMut<ExorcismStatus>,
-) {
-    if menu.open || journal.open || role.current != Role::Investigator {
-        return;
-    }
-    let Some(puzzle_type) = investigation.guess else {
-        return;
-    };
-    if !investigation.confirmed || puzzle_type != GhostType::Banshee {
-        return;
-    }
-
-    let layout_sequence_len = house_layout
-        .as_ref()
-        .map(|layout| layout.exorcism.banshee_anchors.len() as u8)
-        .unwrap_or_else(|| tables.banshee.sequence_len());
-    let sequence_len = banshee_sequence
-        .sequence_len()
-        .max(layout_sequence_len)
-        .max(1);
-    banshee.time_since_trigger += time.delta_seconds();
-    if banshee.failed_timer > 0.0 {
-        banshee.failed_timer = (banshee.failed_timer - time.delta_seconds()).max(0.0);
-        if banshee.failed_timer == 0.0 {
-            banshee.stage = 0;
-            banshee.time_since_trigger = 0.0;
-        }
-        status.state = ExorcismState::Failed;
-        return;
-    }
-
-    status.state = ExorcismState::Stage(banshee.stage);
-    status.stage = banshee.stage;
-    status.progress = if sequence_len == 0 {
-        0.0
-    } else {
-        banshee.stage as f32 / sequence_len as f32
-    };
-    status.stacks = 0.0;
-    status.max_stacks = sequence_len as f32;
-
-    if !keys.just_pressed(KeyCode::KeyF) {
-        return;
-    }
-
-    let Ok(player_transform) = player.get_single() else {
-        return;
-    };
-    let mut closest: Option<(BansheeNodeColor, f32, Vec3)> = None;
-    for (anchor, transform) in anchors.iter() {
-        let distance = player_transform.translation.distance(transform.translation);
-        if distance <= tables.banshee.interact_distance {
-            if closest.is_none() || distance < closest.unwrap().1 {
-                closest = Some((anchor.color, distance, transform.translation));
-            }
-        }
-    }
-
-    let Some((color, _, _pos)) = closest else {
-        return;
-    };
-
-    let expected = banshee.stage;
-    let order_ok = banshee_sequence.expected_color(expected) == Some(color);
-    let timing_ok = if expected == 0 {
-        true
-    } else {
-        let t = banshee.time_since_trigger;
-        t >= tables.banshee.timing_min && t <= tables.banshee.timing_max
-    };
-
-    let next_state = rules::banshee_advance(banshee.stage, sequence_len, timing_ok, order_ok);
-    match next_state {
-        ExorcismState::Failed => {
-            banshee.failed_timer = tables.banshee.fail_reset_seconds;
-            banshee.stage = 0;
-            status.state = ExorcismState::Failed;
-        }
-        ExorcismState::Complete => {
-            if ghost_type.active == GhostType::Banshee {
-                status.state = ExorcismState::Complete;
-            } else {
-                status.state = ExorcismState::Failed;
-            }
-            banshee.stage = sequence_len;
-        }
-        ExorcismState::Stage(next) => {
-            banshee.stage = next;
-            banshee.time_since_trigger = 0.0;
-            status.state = ExorcismState::Stage(next);
-        }
-        _ => {}
-    }
-}
-
-fn update_onryo_puzzle(
-    time: Res<Time>,
-    keys: Res<ButtonInput<KeyCode>>,
-    menu: Res<MenuState>,
-    role: Res<RoleState>,
-    ghost_type: Res<GhostTypeState>,
-    investigation: Res<InvestigationState>,
-    tables: Res<ExorcismTables>,
-    journal: Res<JournalState>,
-    house_layout: Option<Res<HouseLayout>>,
-    player: Query<
-        &Transform,
-        (
-            With<crate::gameplay::investigator::Player>,
-            Without<OnryoCursed>,
-            Without<OnryoRitual>,
-        ),
-    >,
-    mut cursed: Query<
-        (Entity, &mut Transform, &mut OnryoCursed),
-        (
-            Without<crate::gameplay::investigator::Player>,
-            Without<OnryoRitual>,
-        ),
-    >,
-    rituals: Query<
-        (&OnryoRitual, &Transform),
-        (
-            Without<crate::gameplay::investigator::Player>,
-            Without<OnryoCursed>,
-        ),
-    >,
-    mut onryo: ResMut<OnryoPuzzle>,
-    mut status: ResMut<ExorcismStatus>,
-) {
-    if menu.open || journal.open || role.current != Role::Investigator {
-        return;
-    }
-    let Some(puzzle_type) = investigation.guess else {
-        return;
-    };
-    if !investigation.confirmed || puzzle_type != GhostType::Onryo {
-        return;
-    }
-
-    let max_stacks = tables.onryo.max_stacks;
-    let (new_stacks, failed) = rules::onryo_stack_tick(
-        onryo.stacks,
-        time.delta_seconds(),
-        onryo.carrying.is_some(),
-        max_stacks,
-        tables.onryo.stack_rate,
-    );
-    onryo.stacks = new_stacks;
-    onryo.max_stacks = max_stacks;
-    if failed {
-        status.state = ExorcismState::Failed;
-        return;
-    }
-
-    status.state = ExorcismState::Stage(onryo.stage);
-    status.stage = onryo.stage;
-    status.stacks = onryo.stacks;
-    status.max_stacks = onryo.max_stacks;
-
-    if !keys.just_pressed(KeyCode::KeyF) {
-        return;
-    }
-
-    let Ok(player_transform) = player.get_single() else {
-        return;
-    };
-
-    if let Some(carried_entity) = onryo.carrying {
-        if let Ok((_, mut transform, cursed_obj)) = cursed.get_mut(carried_entity) {
-            if !cursed_obj.placed {
-                transform.translation =
-                    player_transform.translation + Vec3::new(0.0, tables.onryo.carry_height, 0.0);
-            }
-        }
-    }
-
-    if onryo.carrying.is_none() {
-        for (entity, transform, cursed_obj) in cursed.iter_mut() {
-            if cursed_obj.placed {
-                continue;
-            }
-            let distance = player_transform.translation.distance(transform.translation);
-            if distance <= tables.onryo.interact_distance {
-                onryo.carrying = Some(entity);
-                onryo.stacks += tables.onryo.stack_penalty_wrong;
-                break;
-            }
-        }
-        return;
-    }
-
-    let mut target_spot: Option<(u8, Vec3)> = None;
-    for (ritual, transform) in rituals.iter() {
-        let distance = player_transform.translation.distance(transform.translation);
-        if distance <= tables.onryo.interact_distance {
-            target_spot = Some((ritual.index, transform.translation));
-            break;
-        }
-    }
-
-    let Some((spot_index, spot_pos)) = target_spot else {
-        return;
-    };
-
-    let Some(carried_entity) = onryo.carrying.take() else {
-        return;
-    };
-
-    if spot_index == onryo.stage {
-        if let Ok((_, mut transform, mut cursed_obj)) = cursed.get_mut(carried_entity) {
-            cursed_obj.placed = true;
-            transform.translation = spot_pos + Vec3::new(0.0, 0.35, 0.0);
-        }
-        onryo.stage += 1;
-        onryo.stacks = (onryo.stacks - tables.onryo.stack_reward_correct).max(0.0);
-        let sequence_len = house_layout
-            .as_ref()
-            .map(|layout| layout.exorcism.onryo_ritual_positions.len() as u8)
-            .unwrap_or(tables.onryo.default_ritual_count);
-        if onryo.stage >= sequence_len {
-            if ghost_type.active == GhostType::Onryo {
-                status.state = ExorcismState::Complete;
-            } else {
-                status.state = ExorcismState::Failed;
-            }
-        }
-    } else {
-        onryo.stacks += tables.onryo.stack_penalty_wrong;
-    }
-}
-
-fn banshee_random_seed(salt: u64) -> u64 {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_nanos() as u64)
-        .unwrap_or(0);
-    let counter = BANSHEE_SEQUENCE_COUNTER.fetch_add(1, Ordering::Relaxed);
-    let mut seed = nanos ^ counter.rotate_left(13) ^ salt.wrapping_mul(0x9E37_79B9_7F4A_7C15);
-    if seed == 0 {
-        seed = 0x94D0_49BB_1331_11EB;
-    }
-    seed
-}
-
-fn shuffle_colors(colors: &mut [BansheeNodeColor], mut seed: u64) {
-    for index in (1..colors.len()).rev() {
-        seed = seed
-            .wrapping_mul(6_364_136_223_846_793_005)
-            .wrapping_add(1_442_695_040_888_963_407);
-        let swap_index = (seed % (index as u64 + 1)) as usize;
-        colors.swap(index, swap_index);
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::InputMap;
 
     #[test]
     fn banshee_accepts_second_correct_press_after_valid_delay() {
@@ -870,14 +398,15 @@ mod tests {
         app.insert_resource(RoleState {
             current: Role::Investigator,
         });
-        app.insert_resource(JournalState { open: false });
-        app.insert_resource(GhostTypeState {
+        app.insert_resource(crate::core::JournalState { open: false });
+        app.insert_resource(crate::core::GhostTypeState {
             selected: GhostType::Banshee,
             active: GhostType::Banshee,
         });
         app.insert_resource(GhostState {
             position: Vec3::ZERO,
         });
+        app.insert_resource(InputMap::default());
         app.insert_resource(ButtonInput::<KeyCode>::default());
         app.insert_resource(Time::<()>::default());
         app.insert_resource(Assets::<Mesh>::default());

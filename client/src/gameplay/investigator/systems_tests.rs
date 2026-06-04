@@ -6,7 +6,7 @@ use crate::gameplay::investigator::Player;
 use crate::gameplay::map::components::{Bounds, CollisionWorld};
 
 #[test]
-fn investigator_faces_forward_with_pi_offset() {
+fn investigator_rotation_tracks_camera_yaw() {
     let mut app = App::new();
     app.add_systems(Update, investigator_movement_system);
     app.insert_resource(MenuState {
@@ -17,8 +17,9 @@ fn investigator_faces_forward_with_pi_offset() {
         current: Role::Investigator,
     });
     app.insert_resource(JournalState { open: false });
+    // Non-zero yaw gives the system something to rotate toward.
     app.insert_resource(CameraControl {
-        yaw: 0.0,
+        yaw: std::f32::consts::FRAC_PI_2,
         pitch: 0.0,
     });
     app.insert_resource(CollisionWorld {
@@ -32,6 +33,10 @@ fn investigator_faces_forward_with_pi_offset() {
     });
     app.insert_resource(Time::<()>::default());
     app.insert_resource(ButtonInput::<KeyCode>::default());
+    app.insert_resource(crate::core::InputMap::default());
+    app.insert_resource(crate::core::MovementConfig::default());
+    app.insert_resource(crate::core::CameraConfig::default());
+    app.insert_resource(crate::gameplay::investigator::systems::InvestigatorVelocity::default());
 
     let player = app
         .world_mut()

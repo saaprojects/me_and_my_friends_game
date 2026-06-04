@@ -3,6 +3,7 @@ use crate::prelude::*;
 use crate::core::health::{
     spawn_health_thread, update_health, update_window_title, HealthChannel, HealthState,
 };
+use crate::core::{CameraConfig, InputMap, MovementConfig};
 use crate::gameplay::{
     evidence::EvidenceTuning,
     ghost::GhostState,
@@ -15,6 +16,7 @@ use crate::ui::UiPlugin;
 pub fn run() {
     let rx = spawn_health_thread();
     let initial_house = HouseLayout::two_room();
+    let mut rng = crate::core::GameRng::default();
 
     App::new()
         .insert_resource(RoleState {
@@ -37,18 +39,14 @@ pub fn run() {
             pitch: 0.12,
         })
         .insert_resource(GhostState {
-            position: initial_house.random_ghost_spawn(),
+            position: initial_house.random_ghost_spawn(&mut rng),
         })
         .insert_resource(HouseLayoutSelection::default())
-        .insert_resource(EquipmentState {
-            active: crate::core::Equipment::Emf,
-            emf_level: 0,
-            emf_dwell: 0.0,
-            emf_smoothed: 0.0,
-            emf_evidence_latch: 0.0,
-            spiritbox_message: "Silence...".to_string(),
-            spiritbox_cooldown: 0.0,
-        })
+        .insert_resource(EquipmentState::default())
+        .insert_resource(InputMap::default())
+        .insert_resource(MovementConfig::default())
+        .insert_resource(CameraConfig::default())
+        .insert_resource(rng)
         .insert_resource(GhostTypeState {
             selected: GhostType::Spirit,
             active: GhostType::Spirit,
@@ -62,8 +60,8 @@ pub fn run() {
         })
         .insert_resource(HealthChannel { rx })
         .insert_resource(AmbientLight {
-            color: Color::srgb(0.7, 0.75, 0.9),
-            brightness: 0.06,
+            color: Color::srgb(0.72, 0.76, 0.92),
+            brightness: 0.22,
         })
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {

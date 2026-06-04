@@ -1,15 +1,12 @@
 use crate::prelude::*;
 
-use crate::core::{JournalState, MenuState, RoleState};
+use crate::core::{CameraConfig, InputMap, JournalState, MenuState, MovementConfig, RoleState};
 use crate::gameplay::investigator::Player;
 use crate::gameplay::map::components::CollisionWorld;
 use crate::gameplay::map::systems::{
     avoid_camera_obstacles, clamp_camera_distance, move_with_collisions, shortest_angle,
 };
-
-const INVESTIGATOR_CAMERA_RADIUS: f32 = 4.8;
-const INVESTIGATOR_CAMERA_MIN_DISTANCE: f32 = 1.2;
-const INVESTIGATOR_CAMERA_DISTANCE_SMOOTH: f32 = 10.0;
+use crate::gameplay::{is_sprinting, read_movement_direction};
 
 #[derive(Resource)]
 pub struct InvestigatorCameraState {
@@ -18,11 +15,12 @@ pub struct InvestigatorCameraState {
 
 impl Default for InvestigatorCameraState {
     fn default() -> Self {
-        Self {
-            distance: INVESTIGATOR_CAMERA_RADIUS,
-        }
+        Self { distance: 4.8 }
     }
 }
+
+#[derive(Resource, Default)]
+pub struct InvestigatorVelocity(pub Vec3);
 
 pub fn investigator_movement_system(
     time: Res<Time>,
@@ -30,9 +28,13 @@ pub fn investigator_movement_system(
     role: Res<RoleState>,
     menu: Res<MenuState>,
     journal: Res<JournalState>,
+    input: Res<InputMap>,
+    movement_cfg: Res<MovementConfig>,
+    camera_cfg: Res<CameraConfig>,
     control: Res<CameraControl>,
     world: Res<CollisionWorld>,
     camera_state: Option<ResMut<InvestigatorCameraState>>,
+    mut inv_vel: ResMut<InvestigatorVelocity>,
     mut player_query: Query<&mut Transform, With<Player>>,
     mut camera_query: Query<&mut Transform, (With<Camera>, Without<Player>)>,
 ) {
@@ -41,30 +43,20 @@ pub fn investigator_movement_system(
     }
 
     let delta = time.delta_seconds();
-    let speed = 3.6;
-    let sprint = keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight);
-    let speed = if sprint { speed * 1.6 } else { speed };
+    let base_speed = movement_cfg.investigator_speed;
+    let sprinting = is_sprinting(&keys, &input);
+    let speed = if sprinting {
+        base_speed * movement_cfg.investigator_sprint_mul
+    } else {
+        base_speed
+    };
 
-    let forward = Vec3::new(control.yaw.sin(), 0.0, control.yaw.cos());
-    let right = Vec3::new(-forward.z, 0.0, forward.x);
-
-    let mut movement = Vec3::ZERO;
-    if keys.pressed(KeyCode::KeyW) || keys.pressed(KeyCode::ArrowUp) {
-        movement += forward;
-    }
-    if keys.pressed(KeyCode::KeyS) || keys.pressed(KeyCode::ArrowDown) {
-        movement -= forward;
-    }
-    if keys.pressed(KeyCode::KeyA) || keys.pressed(KeyCode::ArrowLeft) {
-        movement -= right;
-    }
-    if keys.pressed(KeyCode::KeyD) || keys.pressed(KeyCode::ArrowRight) {
-        movement += right;
-    }
-
-    if movement.length_squared() > 0.0 {
-        movement = movement.normalize() * speed * delta;
-    }
+    let dir = read_movement_direction(&keys, &control, &input);
+    let moving = dir.length_squared() > 0.01;
+    let target_vel = dir * speed;
+    let accel = if moving { 10.0 } else { 8.0 };
+    inv_vel.0 = inv_vel.0.lerp(target_vel, (delta * accel).min(1.0));
+    let movement = inv_vel.0 * delta;
 
     if let Ok(mut player) = player_query.get_single_mut() {
         move_with_collisions(
@@ -76,7 +68,7 @@ pub fn investigator_movement_system(
             true,
         );
 
-        let target_yaw = control.yaw + std::f32::consts::PI;
+        let target_yaw = control.yaw;
         let diff = shortest_angle(player.rotation.to_euler(EulerRot::YXZ).0, target_yaw);
         let smooth = 0.08;
         player.rotate_y(diff * smooth);
@@ -89,15 +81,15 @@ pub fn investigator_movement_system(
         .normalize_or_zero();
         let base_pos = player.translation + Vec3::new(0.0, 1.6, 0.0);
         let dir = -cam_dir;
-        let mut t = clamp_camera_distance(base_pos, dir, INVESTIGATOR_CAMERA_RADIUS, world.bounds);
+        let mut t = clamp_camera_distance(base_pos, dir, camera_cfg.radius, world.bounds);
         t = avoid_camera_obstacles(base_pos, dir, t, 0.35, &world.obstacles);
 
         let distance = if let Some(mut state) = camera_state {
-            let blend = 1.0 - (-delta * INVESTIGATOR_CAMERA_DISTANCE_SMOOTH).exp();
+            let blend = 1.0 - (-delta * camera_cfg.smooth_rate).exp();
             state.distance += (t - state.distance) * blend;
             state.distance = state
                 .distance
-                .clamp(INVESTIGATOR_CAMERA_MIN_DISTANCE, INVESTIGATOR_CAMERA_RADIUS);
+                .clamp(camera_cfg.min_distance, camera_cfg.radius);
             state.distance
         } else {
             t

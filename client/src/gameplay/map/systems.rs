@@ -1,11 +1,24 @@
 use crate::prelude::*;
 
+use bevy::core_pipeline::bloom::{BloomPrefilterSettings, BloomSettings};
+use bevy::core_pipeline::tonemapping::Tonemapping;
 use crate::gameplay::exorcism::RoomLights;
 use crate::gameplay::ghost::GhostMarker;
 use crate::gameplay::investigator::Player;
 use std::path::Path;
 
-use super::components::{Bounds, HouseLayout, Obstacle};
+use super::components::{Bounds, HouseLayout};
+
+pub use super::camera::{avoid_camera_obstacles, clamp_camera_distance};
+pub use super::collision::move_with_collisions;
+pub use super::rooms::{random_round_start_positions, room_id, room_id_in_house, shortest_angle};
+#[cfg(test)]
+pub use super::collision::collides;
+#[cfg(test)]
+pub use super::rooms::{
+    ghost_spawn_positions, investigator_spawn_positions, random_ghost_spawn_position,
+    random_investigator_spawn_position,
+};
 
 #[derive(Component)]
 pub struct LayoutWall;
@@ -37,10 +50,6 @@ pub struct RoomLightVisual {
     flicker_from: f32,
     flicker_to: f32,
     flicker_phase: f32,
-}
-
-pub fn default_house_layout() -> HouseLayout {
-    HouseLayout::two_room()
 }
 
 const TWO_ROOM_SHELL_SCENE: &str = "environment/house_shell_two_room.glb#Scene0";
@@ -160,29 +169,183 @@ fn spawn_fallback_props(
     commands: &mut Commands,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<StandardMaterial>,
+    house: &HouseLayout,
 ) {
-    let prop_mesh_a = meshes.add(Cuboid::new(2.2, 1.2, 1.0));
-    let prop_mesh_b = meshes.add(Cuboid::new(1.4, 0.8, 1.4));
-    let prop_material_a = materials.add(Color::srgb(0.12, 0.16, 0.22));
-    let prop_material_b = materials.add(Color::srgb(0.08, 0.1, 0.15));
-    commands.spawn((
-        PbrBundle {
-            mesh: prop_mesh_a,
-            material: prop_material_a,
-            transform: Transform::from_xyz(-3.5, 0.6, -1.0),
+    let fabric = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.22, 0.17, 0.13),
+        perceptual_roughness: 0.95,
+        ..default()
+    });
+    let wood = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.28, 0.18, 0.11),
+        perceptual_roughness: 0.85,
+        reflectance: 0.06,
+        ..default()
+    });
+
+    for (i, room) in house.rooms.iter().enumerate() {
+        let min_x = room.bounds.min_x;
+        let max_x = room.bounds.max_x;
+        let min_z = room.bounds.min_z;
+        let max_z = room.bounds.max_z;
+        let cx = (min_x + max_x) * 0.5;
+        let cz = (min_z + max_z) * 0.5;
+
+        // Bookcase flush against the back wall (max_z side), left of center.
+        // Depth 1.1 → place center 0.7 m in from wall so back face is at wall.
+        let bx = min_x + 1.5;
+        let bz = max_z - 0.7;
+        commands.spawn((PbrBundle {
+            mesh: meshes.add(Cuboid::new(0.3, 2.0, 1.1)),
+            material: wood.clone(),
+            transform: Transform::from_xyz(bx, 1.0, bz),
             ..default()
-        },
-        LayoutProp,
-    ));
-    commands.spawn((
-        PbrBundle {
-            mesh: prop_mesh_b,
-            material: prop_material_b,
-            transform: Transform::from_xyz(4.0, 0.4, 3.0),
+        }, LayoutProp));
+        for shelf_y in [0.5_f32, 1.0, 1.5] {
+            commands.spawn((PbrBundle {
+                mesh: meshes.add(Cuboid::new(0.28, 0.04, 1.06)),
+                material: wood.clone(),
+                transform: Transform::from_xyz(bx, shelf_y, bz),
+                ..default()
+            }, LayoutProp));
+        }
+
+        if i == 0 {
+            // Main room only: sofa + coffee table against the back wall.
+            let sofa_x = cx + 1.5;
+            let sofa_z = max_z - 1.1;
+            // seat
+            commands.spawn((PbrBundle {
+                mesh: meshes.add(Cuboid::new(2.0, 0.28, 0.82)),
+                material: fabric.clone(),
+                transform: Transform::from_xyz(sofa_x, 0.28, sofa_z),
+                ..default()
+            }, LayoutProp));
+            // back
+            commands.spawn((PbrBundle {
+                mesh: meshes.add(Cuboid::new(2.0, 0.56, 0.22)),
+                material: fabric.clone(),
+                transform: Transform::from_xyz(sofa_x, 0.70, sofa_z + 0.38),
+                ..default()
+            }, LayoutProp));
+            for dx in [-0.9_f32, 0.9] {
+                commands.spawn((PbrBundle {
+                    mesh: meshes.add(Cuboid::new(0.22, 0.38, 0.82)),
+                    material: fabric.clone(),
+                    transform: Transform::from_xyz(sofa_x + dx, 0.38, sofa_z),
+                    ..default()
+                }, LayoutProp));
+            }
+            // coffee table
+            let table_z = cz + (max_z - cz) * 0.3;
+            commands.spawn((PbrBundle {
+                mesh: meshes.add(Cuboid::new(1.1, 0.06, 0.58)),
+                material: wood.clone(),
+                transform: Transform::from_xyz(sofa_x, 0.42, table_z),
+                ..default()
+            }, LayoutProp));
+            for (dx, dz) in [(-0.45_f32, -0.22), (0.45, -0.22), (-0.45, 0.22), (0.45, 0.22)] {
+                commands.spawn((PbrBundle {
+                    mesh: meshes.add(Cuboid::new(0.07, 0.42, 0.07)),
+                    material: wood.clone(),
+                    transform: Transform::from_xyz(sofa_x + dx, 0.21, table_z + dz),
+                    ..default()
+                }, LayoutProp));
+            }
+        } else {
+            // Other rooms: a simple side table
+            commands.spawn((PbrBundle {
+                mesh: meshes.add(Cuboid::new(0.7, 0.06, 0.5)),
+                material: wood.clone(),
+                transform: Transform::from_xyz(cx, 0.72, cz),
+                ..default()
+            }, LayoutProp));
+            for (dx, dz) in [(-0.28_f32, -0.18), (0.28, -0.18), (-0.28, 0.18), (0.28, 0.18)] {
+                commands.spawn((PbrBundle {
+                    mesh: meshes.add(Cuboid::new(0.06, 0.72, 0.06)),
+                    material: wood.clone(),
+                    transform: Transform::from_xyz(cx + dx, 0.36, cz + dz),
+                    ..default()
+                }, LayoutProp));
+            }
+        }
+    }
+}
+
+fn spawn_floor_lamps(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+    house: &HouseLayout,
+    lights: Option<&RoomLights>,
+) {
+    const LAMP_ON: f32 = 18_000.0;
+    const LAMP_OFF: f32 = 0.0;
+
+    let pole_mesh = meshes.add(Cylinder::new(0.035, 0.72));
+    let pole_mat = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.38, 0.34, 0.28),
+        metallic: 0.7,
+        perceptual_roughness: 0.5,
+        ..default()
+    });
+    let shade_mat = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.85, 0.78, 0.62),
+        emissive: Color::srgb(0.06, 0.05, 0.02).into(),
+        perceptual_roughness: 0.6,
+        ..default()
+    });
+    let shade_mesh = meshes.add(Sphere::new(0.18));
+
+    for room in &house.rooms {
+        let enabled = lights.map(|l| l.is_enabled(room.id)).unwrap_or(true);
+        let intensity = if enabled { LAMP_ON } else { LAMP_OFF };
+
+        // Place lamp in a corner: min_x side, 25% toward min_z
+        let lx = room.bounds.min_x + 1.2;
+        let lz = room.bounds.min_z + (room.bounds.max_z - room.bounds.min_z) * 0.25;
+
+        // Pole
+        commands.spawn((PbrBundle {
+            mesh: pole_mesh.clone(),
+            material: pole_mat.clone(),
+            transform: Transform::from_xyz(lx, 0.72, lz),
             ..default()
-        },
-        LayoutProp,
-    ));
+        }, LayoutProp));
+        // Shade globe
+        commands.spawn((PbrBundle {
+            mesh: shade_mesh.clone(),
+            material: shade_mat.clone(),
+            transform: Transform::from_xyz(lx, 1.62, lz),
+            ..default()
+        }, LayoutProp));
+        // Warm point light attached to this room's toggle
+        commands.spawn((
+            PointLightBundle {
+                point_light: PointLight {
+                    color: Color::srgb(1.0, 0.88, 0.65),
+                    intensity,
+                    range: 7.0,
+                    shadows_enabled: false,
+                    ..default()
+                },
+                transform: Transform::from_xyz(lx, 1.55, lz),
+                ..default()
+            },
+            RoomLightVisual {
+                room_id: room.id,
+                on_intensity: LAMP_ON,
+                off_intensity: LAMP_OFF,
+                last_enabled: enabled,
+                flicker_active: false,
+                flicker_elapsed: 0.0,
+                flicker_duration: 0.38,
+                flicker_from: intensity,
+                flicker_to: intensity,
+                flicker_phase: lx * 0.23 + lz * 0.17,
+            },
+        ));
+    }
 }
 
 fn spawn_curated_set_dressing(
@@ -290,43 +453,6 @@ fn spawn_curated_set_dressing(
     spawned_any
 }
 
-pub fn room_id_in_house(layout: &HouseLayout, position: Vec3) -> Option<u8> {
-    layout
-        .rooms
-        .iter()
-        .find(|room| room.bounds.contains_xz(position))
-        .map(|room| room.id)
-}
-
-#[allow(dead_code)]
-pub fn investigator_spawn_position() -> Vec3 {
-    default_house_layout().investigator_spawn
-}
-
-#[cfg(test)]
-pub fn investigator_spawn_positions() -> Vec<Vec3> {
-    default_house_layout().investigator_spawn_candidates()
-}
-
-#[cfg(test)]
-pub fn random_investigator_spawn_position() -> Vec3 {
-    default_house_layout().random_investigator_spawn()
-}
-
-#[allow(dead_code)]
-pub fn ghost_spawn_positions() -> Vec<Vec3> {
-    default_house_layout().ghost_spawns
-}
-
-#[cfg(test)]
-pub fn random_ghost_spawn_position() -> Vec3 {
-    default_house_layout().random_ghost_spawn()
-}
-
-pub fn random_round_start_positions() -> (Vec3, Vec3) {
-    default_house_layout().random_start_positions()
-}
-
 pub(crate) fn setup_scene(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -336,7 +462,13 @@ pub(crate) fn setup_scene(
     room_lights: Option<Res<RoomLights>>,
 ) {
     let floor_mesh = meshes.add(Cuboid::new(20.0, 0.2, 20.0));
-    let floor_material = materials.add(Color::srgb(0.06, 0.1, 0.16));
+    let floor_material = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.30, 0.19, 0.12),
+        metallic: 0.0,
+        perceptual_roughness: 0.88,
+        reflectance: 0.08,
+        ..default()
+    });
     commands.spawn(PbrBundle {
         mesh: floor_mesh,
         material: floor_material,
@@ -357,32 +489,17 @@ pub(crate) fn setup_scene(
     }
     spawn_environment_decor(&mut commands, &asset_server);
     if !spawn_curated_set_dressing(&mut commands, &asset_server, &house) {
-        spawn_fallback_props(&mut commands, &mut meshes, &mut materials);
+        spawn_fallback_props(&mut commands, &mut meshes, &mut materials, &house);
     }
-    spawn_room_lights(&mut commands, &house, room_lights.as_deref());
+    spawn_room_lights(&mut commands, &mut meshes, &mut materials, &house, room_lights.as_deref());
+    spawn_floor_lamps(&mut commands, &mut meshes, &mut materials, &house, room_lights.as_deref());
+    spawn_player_character(&mut commands, &mut meshes, &mut materials, house.initial_investigator_spawn());
 
-    let player_mesh = meshes.add(Cuboid::new(0.7, 1.8, 0.7));
-    let player_material = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.6, 0.65, 0.75),
-        metallic: 0.0,
-        perceptual_roughness: 0.95,
-        reflectance: 0.02,
-        ..default()
-    });
-    commands.spawn((
-        PbrBundle {
-            mesh: player_mesh,
-            material: player_material,
-            transform: Transform::from_translation(house.initial_investigator_spawn()),
-            ..default()
-        },
-        Player,
-    ));
-
-    let ghost_mesh = meshes.add(Sphere::new(0.18).mesh().uv(16, 12));
+    let ghost_mesh = meshes.add(Capsule3d::new(0.24, 0.42));
     let ghost_material = materials.add(StandardMaterial {
-        base_color: Color::srgb(0.55, 0.8, 1.0),
-        emissive: Color::srgb(0.25, 0.35, 0.6).into(),
+        base_color: Color::srgba(0.5, 0.72, 1.0, 0.45),
+        emissive: Color::srgb(0.55, 0.75, 1.4).into(),
+        alpha_mode: AlphaMode::Add,
         ..default()
     });
     commands.spawn((
@@ -399,17 +516,37 @@ pub(crate) fn setup_scene(
         directional_light: DirectionalLight {
             color: Color::srgb(0.55, 0.62, 0.8),
             illuminance: 40.0,
-            shadows_enabled: false,
+            shadows_enabled: true,
             ..default()
         },
         transform: Transform::from_xyz(6.0, 8.0, 4.0).looking_at(Vec3::ZERO, Vec3::Y),
         ..default()
     });
 
-    commands.spawn(Camera3dBundle {
-        transform: Transform::from_xyz(0.0, 1.6, 5.0).looking_at(Vec3::ZERO, Vec3::Y),
-        ..default()
-    });
+    commands.spawn((
+        Camera3dBundle {
+            camera: Camera {
+                hdr: true,
+                ..default()
+            },
+            tonemapping: Tonemapping::ReinhardLuminance,
+            transform: Transform::from_xyz(0.0, 1.6, 5.0).looking_at(Vec3::ZERO, Vec3::Y),
+            ..default()
+        },
+        BloomSettings {
+            intensity: 0.18,
+            prefilter_settings: BloomPrefilterSettings {
+                threshold: 0.85,
+                threshold_softness: 0.3,
+            },
+            ..default()
+        },
+        FogSettings {
+            color: Color::srgba(0.04, 0.05, 0.09, 1.0),
+            falloff: FogFalloff::ExponentialSquared { density: 0.008 },
+            ..default()
+        },
+    ));
 }
 
 fn spawn_layout_walls(
@@ -531,15 +668,110 @@ fn roof_dimensions(house: &HouseLayout) -> (f32, f32, f32) {
     )
 }
 
+fn spawn_player_character(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+    position: Vec3,
+) {
+    let legs_mat = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.11, 0.11, 0.15),
+        metallic: 0.0,
+        perceptual_roughness: 0.95,
+        reflectance: 0.04,
+        ..default()
+    });
+    // Jacket has a barely-perceptible emissive so the silhouette reads in total darkness.
+    let jacket_mat = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.28, 0.31, 0.42),
+        emissive: Color::srgb(0.014, 0.014, 0.022).into(),
+        metallic: 0.0,
+        perceptual_roughness: 0.88,
+        reflectance: 0.08,
+        ..default()
+    });
+    let skin_mat = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.75, 0.55, 0.42),
+        metallic: 0.0,
+        perceptual_roughness: 0.9,
+        reflectance: 0.05,
+        ..default()
+    });
+    // Equipment pack has a faint blue-green emissive like a powered device.
+    let gear_mat = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.38, 0.40, 0.46),
+        emissive: Color::srgb(0.0, 0.016, 0.022).into(),
+        metallic: 0.45,
+        perceptual_roughness: 0.55,
+        reflectance: 0.35,
+        ..default()
+    });
+
+    commands
+        .spawn((
+            SpatialBundle {
+                transform: Transform::from_translation(position),
+                ..default()
+            },
+            Player,
+        ))
+        .with_children(|parent| {
+            // Lower body: legs — Capsule3d::new(r=0.15, half=0.28) → total height 0.86,
+            // center Y=0.43, bottom at Y≈0.0 (floor), top at Y=0.86
+            parent.spawn(PbrBundle {
+                mesh: meshes.add(Capsule3d::new(0.15, 0.28)),
+                material: legs_mat,
+                transform: Transform::from_xyz(0.0, 0.43, 0.0),
+                ..default()
+            });
+            // Torso: box jacket — center Y=1.0, overlaps legs top, top at Y=1.25
+            parent.spawn(PbrBundle {
+                mesh: meshes.add(Cuboid::new(0.44, 0.50, 0.26)),
+                material: jacket_mat,
+                transform: Transform::from_xyz(0.0, 1.0, 0.0),
+                ..default()
+            });
+            // Head — Sphere r=0.13, center Y=1.41, top at Y≈1.54
+            parent.spawn(PbrBundle {
+                mesh: meshes.add(Sphere::new(0.13)),
+                material: skin_mat,
+                transform: Transform::from_xyz(0.0, 1.41, 0.0),
+                ..default()
+            });
+            // Equipment / backpack on the back
+            parent.spawn(PbrBundle {
+                mesh: meshes.add(Cuboid::new(0.22, 0.26, 0.10)),
+                material: gear_mat,
+                transform: Transform::from_xyz(0.0, 0.98, -0.18),
+                ..default()
+            });
+        });
+}
+
 fn room_light_range(bounds: Bounds) -> f32 {
     let width = bounds.max_x - bounds.min_x;
     let depth = bounds.max_z - bounds.min_z;
     (width.max(depth) * 0.9 + 4.0).clamp(10.0, 16.0)
 }
 
-fn spawn_room_lights(commands: &mut Commands, house: &HouseLayout, lights: Option<&RoomLights>) {
+fn spawn_room_lights(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+    house: &HouseLayout,
+    lights: Option<&RoomLights>,
+) {
     const ON_INTENSITY: f32 = 250_000.0;
     const OFF_INTENSITY: f32 = 0.0;
+
+    let fixture_mesh = meshes.add(Cylinder::new(0.20, 0.03));
+    let fixture_mat = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.88, 0.86, 0.82),
+        emissive: Color::srgb(0.28, 0.26, 0.18).into(),
+        metallic: 0.1,
+        perceptual_roughness: 0.5,
+        ..default()
+    });
 
     for room in &house.rooms {
         let width = room.bounds.max_x - room.bounds.min_x;
@@ -592,7 +824,15 @@ fn spawn_room_lights(commands: &mut Commands, house: &HouseLayout, lights: Optio
                     flicker_to: initial_intensity,
                     flicker_phase: room.id as f32 * 1.37 + position.x * 0.17 + position.z * 0.11,
                 },
-            ));
+            )).with_children(|parent| {
+                // Ceiling fixture housing — slightly below the point light origin
+                parent.spawn(PbrBundle {
+                    mesh: fixture_mesh.clone(),
+                    material: fixture_mat.clone(),
+                    transform: Transform::from_xyz(0.0, -0.04, 0.0),
+                    ..default()
+                });
+            });
         }
     }
 }
@@ -650,9 +890,10 @@ pub(crate) fn sync_layout_walls(
     }
     spawn_environment_decor(&mut commands, &asset_server);
     if !spawn_curated_set_dressing(&mut commands, &asset_server, &house) {
-        spawn_fallback_props(&mut commands, &mut meshes, &mut materials);
+        spawn_fallback_props(&mut commands, &mut meshes, &mut materials, &house);
     }
-    spawn_room_lights(&mut commands, &house, room_lights.as_deref());
+    spawn_room_lights(&mut commands, &mut meshes, &mut materials, &house, room_lights.as_deref());
+    spawn_floor_lamps(&mut commands, &mut meshes, &mut materials, &house, room_lights.as_deref());
 }
 
 pub(crate) fn sync_room_light_visuals(
@@ -750,147 +991,6 @@ pub(crate) fn animate_room_light_flicker(
     }
 }
 
-pub fn clamp_to_bounds(pos: &mut Vec3, bounds: Bounds, radius: f32) {
-    pos.x = pos.x.clamp(bounds.min_x + radius, bounds.max_x - radius);
-    pos.z = pos.z.clamp(bounds.min_z + radius, bounds.max_z - radius);
-}
-
-pub fn collides(pos: Vec3, radius: f32, obstacles: &[Obstacle]) -> bool {
-    obstacles.iter().any(|obs| {
-        let hit_x = pos.x + radius > obs.min_x && pos.x - radius < obs.max_x;
-        let hit_z = pos.z + radius > obs.min_z && pos.z - radius < obs.max_z;
-        hit_x && hit_z
-    })
-}
-
-pub fn move_with_collisions(
-    pos: &mut Vec3,
-    movement: Vec3,
-    radius: f32,
-    bounds: Bounds,
-    obstacles: &[Obstacle],
-    block_interior: bool,
-) {
-    let mut next = *pos + movement;
-    clamp_to_bounds(&mut next, bounds, radius);
-
-    if !block_interior {
-        *pos = next;
-        return;
-    }
-
-    if !collides(next, radius, obstacles) {
-        *pos = next;
-        return;
-    }
-
-    let mut try_x = *pos;
-    try_x.x = next.x;
-    clamp_to_bounds(&mut try_x, bounds, radius);
-    if !collides(try_x, radius, obstacles) {
-        *pos = try_x;
-        return;
-    }
-
-    let mut try_z = *pos;
-    try_z.z = next.z;
-    clamp_to_bounds(&mut try_z, bounds, radius);
-    if !collides(try_z, radius, obstacles) {
-        *pos = try_z;
-    }
-}
-
-pub fn clamp_camera_distance(base: Vec3, dir: Vec3, desired: f32, bounds: Bounds) -> f32 {
-    let margin = 0.6;
-    let mut max_t = desired;
-
-    if dir.x.abs() > f32::EPSILON {
-        let bound_x = if dir.x > 0.0 {
-            bounds.max_x - margin
-        } else {
-            bounds.min_x + margin
-        };
-        let t = (bound_x - base.x) / dir.x;
-        if t.is_finite() && t > 0.0 {
-            max_t = max_t.min(t);
-        }
-    }
-
-    if dir.z.abs() > f32::EPSILON {
-        let bound_z = if dir.z > 0.0 {
-            bounds.max_z - margin
-        } else {
-            bounds.min_z + margin
-        };
-        let t = (bound_z - base.z) / dir.z;
-        if t.is_finite() && t > 0.0 {
-            max_t = max_t.min(t);
-        }
-    }
-
-    max_t.clamp(1.2, desired)
-}
-
-pub fn avoid_camera_obstacles(
-    base: Vec3,
-    dir: Vec3,
-    mut distance: f32,
-    radius: f32,
-    obstacles: &[Obstacle],
-) -> f32 {
-    let step = 0.2;
-    while distance > 1.2 {
-        let candidate = base + dir * distance;
-        if !collides(candidate, radius, obstacles)
-            && !segment_collides(base, candidate, radius, obstacles)
-        {
-            break;
-        }
-        distance -= step;
-        if distance <= 1.2 {
-            return 1.2;
-        }
-    }
-    distance
-}
-
-fn segment_collides(start: Vec3, end: Vec3, radius: f32, obstacles: &[Obstacle]) -> bool {
-    let delta = end - start;
-    let len = delta.length();
-    if len <= f32::EPSILON {
-        return collides(start, radius, obstacles);
-    }
-
-    let dir = delta / len;
-    let step = (radius * 0.5).max(0.05);
-    let mut t = step;
-    while t < len {
-        let point = start + dir * t;
-        if collides(point, radius, obstacles) {
-            return true;
-        }
-        t += step;
-    }
-    false
-}
-
 #[cfg(test)]
 #[path = "systems_tests.rs"]
 mod systems_tests;
-
-pub fn room_id(position: Vec3) -> u8 {
-    let x = if position.x >= 0.0 { 1 } else { 0 };
-    let z = if position.z >= 0.0 { 1 } else { 0 };
-    (x << 1) | z
-}
-
-pub fn shortest_angle(current: f32, target: f32) -> f32 {
-    let mut diff = target - current;
-    while diff > std::f32::consts::PI {
-        diff -= std::f32::consts::TAU;
-    }
-    while diff < -std::f32::consts::PI {
-        diff += std::f32::consts::TAU;
-    }
-    diff
-}

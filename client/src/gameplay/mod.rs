@@ -1,6 +1,6 @@
 use crate::prelude::*;
 
-use crate::core::{JournalState, MenuState, RoleState, RoleYaw};
+use crate::core::{GameRng, InputMap, JournalState, MenuState, RoleState, RoleYaw};
 
 pub mod evidence;
 pub mod exorcism;
@@ -19,14 +19,46 @@ impl Plugin for GameplayPlugin {
             exorcism::ExorcismPlugin,
         ))
         .init_resource::<evidence::EvidenceTuning>()
+        .init_resource::<InputMap>()
+        .init_resource::<crate::core::MovementConfig>()
+        .init_resource::<crate::core::CameraConfig>()
+        .init_resource::<GameRng>()
         .add_systems(Update, (handle_role_toggle, update_mouse_look));
     }
+}
+
+pub fn read_movement_direction(
+    keys: &ButtonInput<KeyCode>,
+    control: &CameraControl,
+    input: &InputMap,
+) -> Vec3 {
+    let forward = Vec3::new(control.yaw.sin(), 0.0, control.yaw.cos());
+    let right = Vec3::new(-forward.z, 0.0, forward.x);
+    let mut dir = Vec3::ZERO;
+    if keys.pressed(input.move_forward) || keys.pressed(input.move_forward_alt) {
+        dir += forward;
+    }
+    if keys.pressed(input.move_back) || keys.pressed(input.move_back_alt) {
+        dir -= forward;
+    }
+    if keys.pressed(input.move_left) || keys.pressed(input.move_left_alt) {
+        dir -= right;
+    }
+    if keys.pressed(input.move_right) || keys.pressed(input.move_right_alt) {
+        dir += right;
+    }
+    dir.normalize_or_zero()
+}
+
+pub fn is_sprinting(keys: &ButtonInput<KeyCode>, input: &InputMap) -> bool {
+    keys.pressed(input.sprint) || keys.pressed(input.sprint_alt)
 }
 
 fn handle_role_toggle(
     keys: Res<ButtonInput<KeyCode>>,
     menu: Res<MenuState>,
     journal: Res<JournalState>,
+    input: Res<InputMap>,
     mut role: ResMut<RoleState>,
     mut role_yaw: ResMut<RoleYaw>,
     mut control: ResMut<CameraControl>,
@@ -34,7 +66,7 @@ fn handle_role_toggle(
     if menu.open || journal.open {
         return;
     }
-    if keys.just_pressed(KeyCode::Tab) || keys.just_pressed(KeyCode::KeyT) {
+    if keys.just_pressed(input.role_toggle) || keys.just_pressed(input.role_toggle_alt) {
         role.current = match role.current {
             Role::Ghost => Role::Investigator,
             Role::Investigator => Role::Ghost,

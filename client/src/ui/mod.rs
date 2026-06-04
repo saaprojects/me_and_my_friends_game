@@ -67,18 +67,6 @@ pub struct GhostHudRoot;
 pub struct GhostAbilityText;
 
 #[derive(Component)]
-pub struct JournalSelectSpiritButton;
-
-#[derive(Component)]
-pub struct JournalSelectBansheeButton;
-
-#[derive(Component)]
-pub struct JournalSelectOnryoButton;
-
-#[derive(Component)]
-pub struct JournalConfirmButton;
-
-#[derive(Component)]
 pub struct JournalConfirmText;
 
 #[derive(Component)]
@@ -87,41 +75,28 @@ pub struct ResolutionTitleText;
 #[derive(Component)]
 pub struct ResolutionBodyText;
 
-#[derive(Component)]
-pub struct ExitButton;
+#[derive(Component, Default)]
+pub struct ButtonAnimT(pub f32);
 
-#[derive(Component)]
-pub struct GhostSelectButton;
-
-#[derive(Component)]
-pub struct InvestigatorSelectButton;
-
-#[derive(Component)]
-pub struct SpiritGhostButton;
-
-#[derive(Component)]
-pub struct BansheeGhostButton;
-
-#[derive(Component)]
-pub struct OnryoGhostButton;
-
-#[derive(Component)]
-pub struct StartScreenButton;
-
-#[derive(Component)]
-pub struct BeginHauntButton;
-
-#[derive(Component)]
-pub struct BeginInvestigationButton;
-
-#[derive(Component)]
-pub struct TwoRoomCountButton;
-
-#[derive(Component)]
-pub struct ThreeRoomCountButton;
-
-#[derive(Component)]
-pub struct ResolutionContinueButton;
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Component)]
+pub enum ButtonKind {
+    StartScreen,
+    GhostSelect,
+    InvestigatorSelect,
+    SpiritGhost,
+    BansheeGhost,
+    OnryoGhost,
+    TwoRoomCount,
+    ThreeRoomCount,
+    BeginHaunt,
+    BeginInvestigation,
+    Exit,
+    JournalSelectSpirit,
+    JournalSelectBanshee,
+    JournalSelectOnryo,
+    JournalConfirm,
+    ResolutionContinue,
+}
 
 pub struct UiPlugin;
 

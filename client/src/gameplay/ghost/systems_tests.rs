@@ -2,7 +2,7 @@ use bevy::prelude::*;
 
 use crate::core::{CameraControl, MenuState, Role, RoleState};
 use crate::gameplay::ghost::systems::ghost_movement_system;
-use crate::gameplay::ghost::GhostState;
+use crate::gameplay::ghost::{GhostBobState, GhostState, GhostVelocity};
 use crate::gameplay::map::components::{Bounds, CollisionWorld, Obstacle};
 
 fn test_world_with_divider() -> CollisionWorld {
@@ -51,6 +51,10 @@ fn run_ghost_step(start: Vec3) -> Vec3 {
     });
     app.insert_resource(Time::<()>::default());
     app.insert_resource(ButtonInput::<KeyCode>::default());
+    app.insert_resource(crate::core::InputMap::default());
+    app.insert_resource(crate::core::MovementConfig::default());
+    app.insert_resource(GhostVelocity::default());
+    app.insert_resource(GhostBobState::default());
     app.world_mut().spawn(Camera3dBundle::default());
 
     {

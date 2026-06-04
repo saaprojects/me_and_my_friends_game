@@ -1,8 +1,6 @@
 use crate::prelude::*;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
+use crate::core::GameRng;
 
-static RANDOM_COUNTER: AtomicU64 = AtomicU64::new(0);
 const MIN_START_SEPARATION_SQ: f32 = 1.0;
 
 #[derive(Resource)]
@@ -50,6 +48,28 @@ pub struct ExorcismLayout {
     pub banshee_anchors: Vec<Vec3>,
     pub onryo_cursed_positions: Vec<Vec3>,
     pub onryo_ritual_positions: Vec<Vec3>,
+}
+
+/// Standalone resource for exorcism anchor positions, derived from the active HouseLayout.
+/// Exorcism systems read from this instead of HouseLayout directly so that
+/// physical map data and puzzle placement stay in separate resources.
+#[derive(Resource, Clone, Debug, Default)]
+pub struct ExorcismPlacement {
+    pub spirit_anchors: Vec<Vec3>,
+    pub banshee_anchors: Vec<Vec3>,
+    pub onryo_cursed_positions: Vec<Vec3>,
+    pub onryo_ritual_positions: Vec<Vec3>,
+}
+
+impl ExorcismPlacement {
+    pub fn from_layout(layout: &ExorcismLayout) -> Self {
+        Self {
+            spirit_anchors: layout.spirit_anchors.clone(),
+            banshee_anchors: layout.banshee_anchors.clone(),
+            onryo_cursed_positions: layout.onryo_cursed_positions.clone(),
+            onryo_ritual_positions: layout.onryo_ritual_positions.clone(),
+        }
+    }
 }
 
 #[allow(dead_code)]
@@ -424,19 +444,19 @@ impl HouseLayout {
     }
 
     #[cfg(test)]
-    pub fn random_investigator_spawn(&self) -> Vec3 {
+    pub fn random_investigator_spawn(&self, rng: &mut GameRng) -> Vec3 {
         let candidates = self.investigator_spawn_candidates();
-        candidates[random_index(candidates.len(), random_seed(0x49D4_923A))]
+        candidates[random_index(candidates.len(), rng.next_seed(0x49D4_923A))]
     }
 
-    pub fn random_ghost_spawn(&self) -> Vec3 {
+    pub fn random_ghost_spawn(&self, rng: &mut GameRng) -> Vec3 {
         if self.ghost_spawns.is_empty() {
             return Vec3::new(0.0, 1.6, 0.0);
         }
-        self.ghost_spawns[random_index(self.ghost_spawns.len(), random_seed(0x7A3C_5F91))]
+        self.ghost_spawns[random_index(self.ghost_spawns.len(), rng.next_seed(0x7A3C_5F91))]
     }
 
-    pub fn random_start_positions(&self) -> (Vec3, Vec3) {
+    pub fn random_start_positions(&self, rng: &mut GameRng) -> (Vec3, Vec3) {
         let investigator_candidates = self.investigator_spawn_candidates();
         let ghost_candidates = if self.ghost_spawns.is_empty() {
             vec![Vec3::new(0.0, 1.6, 0.0)]
@@ -444,9 +464,8 @@ impl HouseLayout {
             self.ghost_spawns.clone()
         };
 
-        let seed = random_seed(0xA17C_E521);
-        let investigator_start = random_index(investigator_candidates.len(), seed);
-        let ghost_start = random_index(ghost_candidates.len(), seed.rotate_left(17));
+        let investigator_start = random_index(investigator_candidates.len(), rng.next_seed(0xA17C_E521));
+        let ghost_start = random_index(ghost_candidates.len(), rng.next_seed(0xB93F_2D17));
 
         for investigator_offset in 0..investigator_candidates.len() {
             let investigator = investigator_candidates
@@ -476,18 +495,6 @@ impl Bounds {
     }
 }
 
-fn random_seed(salt: u64) -> u64 {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_nanos() as u64)
-        .unwrap_or(0);
-    let counter = RANDOM_COUNTER.fetch_add(1, Ordering::Relaxed);
-    let mut seed = nanos ^ counter.rotate_left(19) ^ salt.wrapping_mul(0x9E37_79B9_7F4A_7C15);
-    if seed == 0 {
-        seed = 0xC2B2_AE35_79B9_83EF;
-    }
-    seed
-}
 
 fn random_index(len: usize, seed: u64) -> usize {
     if len <= 1 {

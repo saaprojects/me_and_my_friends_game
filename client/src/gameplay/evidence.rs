@@ -1,4 +1,4 @@
-use crate::core::GhostType;
+use crate::core::{Equipment, GhostType};
 use bevy::prelude::{Resource, Vec3};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -166,6 +166,79 @@ impl SpiritboxReply {
             SpiritboxReply::Right => "To your right...",
             SpiritboxReply::Behind => "Behind you...",
         }
+    }
+}
+
+pub struct EmfOutput {
+    pub emf_dwell: f32,
+    pub emf_evidence_latch: f32,
+    pub emf_smoothed: f32,
+    pub emf_level: u8,
+    pub trigger_evidence: bool,
+}
+
+pub fn tick_emf(
+    distance: f32,
+    facing: bool,
+    ghost_type: GhostType,
+    same_room: bool,
+    current_dwell: f32,
+    current_smoothed: f32,
+    current_latch: f32,
+    active_equipment: Equipment,
+    dt: f32,
+    elapsed: f32,
+    tuning: &EvidenceTuning,
+) -> EmfOutput {
+    let base_level = emf_level(ghost_type, distance, same_room, tuning);
+    let overlaps = distance <= overlap_distance(tuning);
+    let candidate_five = overlaps && emf_five_candidate(ghost_type, distance, tuning) && facing;
+
+    let dwell_lock = tuning.emf_dwell_lock;
+    let new_dwell = if candidate_five {
+        (current_dwell + dt).min(dwell_lock)
+    } else {
+        (current_dwell - dt * tuning.emf_dwell_decay_mul).max(0.0)
+    };
+
+    let locked_five = new_dwell >= dwell_lock;
+    let new_latch = if locked_five {
+        tuning.emf_evidence_latch
+    } else {
+        (current_latch - dt).max(0.0)
+    };
+
+    let mut target_level = if locked_five { 5.0 } else { base_level as f32 };
+    if !facing {
+        target_level = target_level.min(4.0);
+    }
+
+    if !locked_five {
+        let jitter_amp = match base_level {
+            2 | 3 => tuning.emf_jitter_amp_23,
+            4 => tuning.emf_jitter_amp_4,
+            _ => 0.0,
+        };
+        if jitter_amp > 0.0 {
+            let t = elapsed + tuning.emf_jitter_phase;
+            let jitter =
+                (t * tuning.emf_jitter_f1).sin() * 0.6 + (t * tuning.emf_jitter_f2).sin() * 0.4;
+            target_level += jitter * jitter_amp;
+        }
+        target_level = target_level.clamp(0.0, 4.49);
+    }
+
+    let alpha = 1.0 - (-tuning.emf_smooth_rate * dt).exp();
+    let new_smoothed = current_smoothed + (target_level - current_smoothed) * alpha;
+    let new_level = new_smoothed.round().clamp(0.0, 5.0) as u8;
+    let trigger_evidence = active_equipment == Equipment::Emf && new_latch > 0.0;
+
+    EmfOutput {
+        emf_dwell: new_dwell,
+        emf_evidence_latch: new_latch,
+        emf_smoothed: new_smoothed,
+        emf_level: new_level,
+        trigger_evidence,
     }
 }
 
